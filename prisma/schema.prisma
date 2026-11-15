@@ -1,0 +1,335 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  passwordHash     String
+  name             String?
+  timezone         String   @default("America/New_York")
+  currency         String   @default("USD")
+  largeAmountCents Int      @default(500000)
+  aiDailyTokenCap  Int      @default(300000)
+  createdAt        DateTime @default(now())
+
+  sessions       Session[]
+  categories     Category[]
+  merchants      Merchant[]
+  paymentMethods PaymentMethod[]
+  entities       Entity[]
+  expenses       Expense[]
+  receipts       Receipt[]
+  recurring      RecurringExpense[]
+  apiKeys        ApiKey[]
+  pairingCodes   PairingCode[]
+  auditLogs      AuditLog[]
+  llmUsage       LlmUsage[]
+  insights       Insight[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Category {
+  id               String    @id @default(cuid())
+  userId           String
+  name             String
+  essentialDefault Boolean?
+  taxTagDefault    TaxTag?
+  sortOrder        Int       @default(0)
+  archivedAt       DateTime?
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses         Expense[]
+  merchants        Merchant[]
+  recurring        RecurringExpense[]
+
+  @@unique([userId, name])
+}
+
+model Merchant {
+  id                String             @id @default(cuid())
+  userId            String
+  name              String
+  aliases           String[]
+  defaultCategoryId String?
+  defaultEntityId   String?
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultCategory   Category?          @relation(fields: [defaultCategoryId], references: [id], onDelete: SetNull)
+  defaultEntity     Entity?            @relation(fields: [defaultEntityId], references: [id], onDelete: SetNull)
+  expenses          Expense[]
+  recurring         RecurringExpense[]
+
+  @@unique([userId, name])
+}
+
+model PaymentMethod {
+  id        String             @id @default(cuid())
+  userId    String
+  name      String
+  type      PaymentType
+  last4     String?
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses  Expense[]
+  recurring RecurringExpense[]
+
+  @@unique([userId, name])
+}
+
+model Entity {
+  id        String             @id @default(cuid())
+  userId    String
+  name      String
+  isDefault Boolean            @default(false)
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses  Expense[]
+  recurring RecurringExpense[]
+  merchants Merchant[]
+
+  @@unique([userId, name])
+}
+
+model Expense {
+  id              String        @id @default(cuid())
+  userId          String
+  occurredOn      DateTime      @db.Date
+  amountCents     Int
+  currency        String        @default("USD")
+  description     String
+  merchantId      String?
+  categoryId      String
+  paymentMethodId String?
+  entityId        String
+  taxTag          TaxTag        @default(UNREVIEWED)
+  essential       Boolean?
+  notes           String?
+  source          Source
+  status          ExpenseStatus @default(POSTED)
+  recurringId     String?
+  periodKey       String?
+  apiKeyId        String?
+  idempotencyKey  String?
+  needsReview     Boolean       @default(false)
+  reviewReason    String?
+  importRef       String?
+  deletedAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  merchant      Merchant?         @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+  category      Category          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  paymentMethod PaymentMethod?    @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  entity        Entity            @relation(fields: [entityId], references: [id], onDelete: Restrict)
+  recurring     RecurringExpense? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+  apiKey        ApiKey?           @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  receipts      Receipt[]
+
+  @@unique([recurringId, periodKey])
+  @@unique([userId, idempotencyKey])
+  @@unique([userId, importRef])
+  @@index([userId, occurredOn])
+  @@index([userId, categoryId, occurredOn])
+}
+
+model Receipt {
+  id           String   @id @default(cuid())
+  userId       String
+  expenseId    String?
+  blobPathname String
+  contentType  String
+  sizeBytes    Int
+  sha256       String
+  extracted    Json?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expense      Expense? @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sha256])
+}
+
+model RecurringExpense {
+  id              String          @id @default(cuid())
+  userId          String
+  name            String
+  merchantId      String?
+  categoryId      String
+  paymentMethodId String?
+  entityId        String
+  taxTag          TaxTag          @default(UNREVIEWED)
+  essential       Boolean?
+  frequency       Frequency
+  dayOfMonth      Int
+  monthOfYear     Int?
+  amountType      AmountType
+  status          RecurringStatus @default(ACTIVE)
+  startOn         DateTime        @db.Date
+  endOn           DateTime?       @db.Date
+  nextRunOn       DateTime        @db.Date
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  merchant        Merchant?       @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+  category        Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  paymentMethod   PaymentMethod?  @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  entity          Entity          @relation(fields: [entityId], references: [id], onDelete: Restrict)
+  rates           RecurringRate[]
+  expenses        Expense[]
+}
+
+model RecurringRate {
+  id            String           @id @default(cuid())
+  recurringId   String
+  amountCents   Int
+  effectiveFrom DateTime         @db.Date
+  createdAt     DateTime         @default(now())
+  recurring     RecurringExpense @relation(fields: [recurringId], references: [id], onDelete: Cascade)
+
+  @@unique([recurringId, effectiveFrom])
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  prefix     String
+  hash       String    @unique
+  scopes     String[]
+  lastUsedAt DateTime?
+  lastUsedIp String?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses   Expense[]
+  auditLogs  AuditLog[]
+}
+
+model PairingCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String    @unique
+  scopes    String[]
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  actor      Actor
+  apiKeyId   String?
+  action     String
+  targetType String
+  targetId   String
+  diff       Json?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKey     ApiKey?  @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+}
+
+model RateLimit {
+  key         String   @id
+  count       Int
+  windowStart DateTime
+}
+
+model LlmUsage {
+  id               String   @id @default(cuid())
+  userId           String
+  feature          String
+  model            String
+  promptTokens     Int
+  completionTokens Int
+  createdAt        DateTime @default(now())
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model Insight {
+  id          String      @id @default(cuid())
+  userId      String
+  kind        InsightKind
+  periodKey   String
+  title       String
+  bodyMd      String
+  facts       Json
+  createdAt   DateTime    @default(now())
+  dismissedAt DateTime?
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, periodKey])
+}
+
+enum TaxTag {
+  UNREVIEWED
+  NONE
+  BUSINESS
+  MEDICAL
+  CHARITABLE
+  TAX_PAYMENT
+  PROPERTY_TAX
+  POSSIBLY_DEDUCTIBLE
+}
+
+enum PaymentType {
+  CREDIT
+  DEBIT
+  CASH
+  TRANSFER
+  OTHER
+}
+
+enum Source {
+  WEB
+  API
+  RECURRING
+  IMPORT
+}
+
+enum ExpenseStatus {
+  POSTED
+  PENDING_CONFIRM
+}
+
+enum Frequency {
+  MONTHLY
+  YEARLY
+}
+
+enum AmountType {
+  FIXED
+  VARIABLE
+}
+
+enum RecurringStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum Actor {
+  WEB
+  API_KEY
+  CRON
+  IMPORT
+}
+
+enum InsightKind {
+  MONTHLY_REVIEW
+  TAX_REVIEW
+}

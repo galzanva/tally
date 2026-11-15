@@ -1,0 +1,60 @@
+{
+  "name": "tally",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "user:create": "tsx scripts/create-user.ts",
+    "import:xlsx": "tsx scripts/import-xlsx.ts",
+    "check:scope": "tsx scripts/check-scope.ts",
+    "test": "tsx --test test/**/*.test.ts"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@node-rs/argon2",
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma"
+    ]
+  },
+  "dependencies": {
+    "@asteasolutions/zod-to-openapi": "9.1.0",
+    "@date-fns/tz": "1.5.0",
+    "@node-rs/argon2": "2.2.2",
+    "@prisma/client": "6.19.3",
+    "@radix-ui/react-dialog": "1.3.1",
+    "@radix-ui/react-slot": "1.5.0",
+    "@vercel/blob": "2.9.0",
+    "archiver": "8.0.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "date-fns": "4.4.0",
+    "exceljs": "4.4.0",
+    "lucide-react": "1.73.0",
+    "motion": "14.14.0",
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "recharts": "3.10.1",
+    "tailwind-merge": "3.7.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.5",
+    "@types/archiver": "8.0.0",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "prisma": "6.19.3",
+    "tailwindcss": "4.3.5",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
+}
