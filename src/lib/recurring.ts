@@ -60,6 +60,9 @@ export function committedTotals(items: { status: string; frequency: Frequency; a
     if (item.frequency === "MONTHLY") {
       monthlyCents += item.amountCents;
       yearlyCents += item.amountCents * 12;
+    } else if (item.frequency === "SEMIANNUAL") {
+      yearlyCents += item.amountCents * 2;
+      monthlyCents += Math.round(item.amountCents / 6);
     } else {
       yearlyCents += item.amountCents;
       monthlyCents += Math.round(item.amountCents / 12);
@@ -229,6 +232,14 @@ export async function resumeRecurring(userId: string, actor: Actor, id: string, 
   await db.recurringExpense.update({ where: { id }, data: { status: "ACTIVE", nextRunOn: ymdToDate(next) } });
   await writeAudit(userId, { actor, action: "recurring.resume", targetType: "recurring", targetId: id, diff: { backfill, nextRunOn: next } });
   if (backfill) await runDueRecurring(userId, actor);
+}
+
+export async function deleteRecurring(userId: string, actor: Actor, id: string) {
+  const db = forUser(userId);
+  const item = await db.recurringExpense.findFirst({ where: { id } });
+  if (!item) throw new AppError(404, "not_found", "That recurring item doesn't exist.");
+  await db.recurringExpense.delete({ where: { id } });
+  await writeAudit(userId, { actor, action: "recurring.delete", targetType: "recurring", targetId: id, diff: { name: item.name } });
 }
 
 export async function endRecurring(userId: string, actor: Actor, id: string, endOn?: string) {

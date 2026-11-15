@@ -77,7 +77,7 @@ export function Dialog({ open, onOpenChange, title, description, children }: { o
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/70" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 max-h-[min(92dvh,40rem)] w-[min(100%-2rem,28rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-3xl border border-white/10 bg-[#0c1214] p-5 focus:outline-none">
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 max-h-[min(92dvh,40rem)] w-[min(100%-2rem,32rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-3xl border border-white/10 bg-[#0c1214] p-5 focus:outline-none">
           <DialogPrimitive.Title className="font-display text-2xl">{title}</DialogPrimitive.Title>
           {description ? <DialogPrimitive.Description className="mt-1 text-sm text-muted">{description}</DialogPrimitive.Description> : null}
           <div className="mt-4">{children}</div>
@@ -92,7 +92,7 @@ export function Sheet({ open, onOpenChange, title, children, footer }: { open: b
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/70" />
-        <DialogPrimitive.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[92dvh] flex-col rounded-t-3xl border border-white/10 bg-[#0c1214] focus:outline-none md:inset-y-0 md:left-auto md:right-0 md:h-full md:w-[28rem] md:max-h-none md:rounded-none md:border-l">
+        <DialogPrimitive.Content className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[100vw] flex-col border-l border-white/10 bg-[#0c1214] focus:outline-none sm:w-[min(32rem,100%)] md:w-[min(44rem,calc(100vw-8rem))]">
           <div className="flex items-center justify-between px-4 py-3">
             <DialogPrimitive.Title className="font-display text-2xl">{title}</DialogPrimitive.Title>
             <DialogPrimitive.Close className="inline-flex size-11 items-center justify-center rounded-full hover:bg-white/5" aria-label="Close">

@@ -15,6 +15,7 @@ export type TaxFinding = {
   expenseId: string;
   occurredOn: string;
   merchant: string;
+  amountCents?: number;
   amountFormatted: string;
   reason: string;
   suggestedTaxTag?: string;
@@ -68,6 +69,7 @@ export async function taxMatrix(userId: string, year: number) {
       id: row.id,
       occurredOn: dateOnlyToYmd(row.occurredOn),
       merchant: row.merchant?.name ?? row.description,
+      amountCents: row.amountCents,
       amountFormatted: formatMoney(row.amountCents, user.currency),
       taxTag: row.taxTag,
     })),
@@ -76,6 +78,7 @@ export async function taxMatrix(userId: string, year: number) {
       occurredOn: dateOnlyToYmd(row.occurredOn),
       merchant: row.merchant?.name ?? row.description,
       entity: row.entity?.name ?? "",
+      amountCents: row.amountCents,
       amountFormatted: formatMoney(row.amountCents, user.currency),
     })),
     rows,
@@ -88,7 +91,7 @@ export async function taxFindings(userId: string, year: number): Promise<TaxFind
   for (const row of packed.rows) {
     const name = row.merchant?.name ?? row.description;
     const text = `${row.description} ${row.notes ?? ""} ${name}`.toLowerCase();
-    const base = { expenseId: row.id, occurredOn: dateOnlyToYmd(row.occurredOn), merchant: name, amountFormatted: formatMoney(row.amountCents, packed.currency) };
+    const base = { expenseId: row.id, occurredOn: dateOnlyToYmd(row.occurredOn), merchant: name, amountCents: row.amountCents, amountFormatted: formatMoney(row.amountCents, packed.currency) };
     if (row.taxTag === "UNREVIEWED" && TAX_CATEGORIES.has(row.category?.name ?? "")) {
       const suggested =
         row.category?.name === "Health & Medical" ? "MEDICAL" : row.category?.name === "Taxes" ? "TAX_PAYMENT" : row.category?.name === "Auto" && text.includes("property tax") ? "PROPERTY_TAX" : row.category?.name === "Trading" ? "BUSINESS" : "POSSIBLY_DEDUCTIBLE";

@@ -309,6 +309,7 @@ enum ExpenseStatus {
 enum Frequency {
   MONTHLY
   YEARLY
+  SEMIANNUAL
 }
 
 enum AmountType {

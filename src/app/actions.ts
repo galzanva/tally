@@ -9,10 +9,11 @@ import { askQuestion, generateMonthlyReview } from "@/lib/ai";
 import { bulkPatchExpenses, createExpense, restoreExpense, softDeleteExpense, updateExpense, type ExpenseWrite } from "@/lib/expenses";
 import { importWorkbook } from "@/lib/import/xlsx";
 import { createManualKey, createPairingCode, revokeKey } from "@/lib/keys";
-import { addRate, createRecurring, endRecurring, pauseRecurring, resumeRecurring, updateRecurring } from "@/lib/recurring";
+import { addRate, createRecurring, deleteRecurring, endRecurring, pauseRecurring, resumeRecurring, updateRecurring } from "@/lib/recurring";
 import { runTaxReview } from "@/lib/tax";
-import { forUser } from "@/lib/db";
+import { forUser, isUniqueConflict } from "@/lib/db";
 import { parseDollarsToCents } from "@/lib/money";
+import { normalizeMerchant } from "@/lib/text";
 import { SCOPES } from "@/lib/seed";
 
 function fail(error: unknown): { ok: false; message: string; code?: string } {
@@ -104,6 +105,17 @@ export async function recurringStatusAction(id: string, action: "pause" | "resum
   }
 }
 
+export async function deleteRecurringAction(id: string) {
+  const { user } = await requireUser();
+  try {
+    await deleteRecurring(user.id, "WEB", id);
+    revalidatePath("/recurring");
+    return { ok: true as const };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
 export async function changeRateAction(id: string, amount: string, effectiveFrom: string, applyToPosted: boolean) {
   const { user } = await requireUser();
   try {
@@ -175,7 +187,7 @@ export async function manualKeyAction(formData: FormData) {
 export async function revokeKeyAction(id: string) {
   const { user } = await requireUser();
   await revokeKey(user.id, id);
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
 }
 
 export async function accountAction(formData: FormData) {
@@ -184,21 +196,27 @@ export async function accountAction(formData: FormData) {
   try {
     Intl.DateTimeFormat(undefined, { timeZone: timezone });
   } catch {
-    redirect("/settings?error=timezone");
+    redirect("/settings/account?error=timezone");
   }
   const dollars = String(formData.get("largeAmount") ?? "");
   const largeAmountCents = dollars ? parseDollarsToCents(dollars) : user.largeAmountCents;
   const current = String(formData.get("currentPassword") ?? "");
   const next = String(formData.get("nextPassword") ?? "");
   if (next) {
-    if (!(await checkPassword(user.id, current))) redirect("/settings?error=password");
-    if (next.length < 10) redirect("/settings?error=short");
+    if (!(await checkPassword(user.id, current))) redirect("/settings/account?error=password");
+    if (next.length < 10) redirect("/settings/account?error=short");
     await updateAccount(user.id, { timezone, largeAmountCents, nextPassword: next });
   } else {
     await updateAccount(user.id, { timezone, largeAmountCents });
   }
-  revalidatePath("/settings");
-  redirect("/settings?saved=1");
+  revalidatePath("/settings", "layout");
+  redirect("/settings/account?saved=1");
+}
+
+function categoryDone(error?: string): never {
+  revalidatePath("/settings", "layout");
+  revalidatePath("/expenses");
+  redirect(error ? `/settings/categories?error=${error}` : "/settings/categories");
 }
 
 export async function categoryAction(formData: FormData) {
@@ -206,48 +224,128 @@ export async function categoryAction(formData: FormData) {
   const db = forUser(user.id);
   const intent = String(formData.get("intent"));
   const id = String(formData.get("id") ?? "");
-  if (intent === "rename") await db.category.update({ where: { id }, data: { name: String(formData.get("name") ?? "").trim() } });
-  if (intent === "archive") await db.category.update({ where: { id }, data: { archivedAt: new Date() } });
-  if (intent === "defaults") {
-    const essential = String(formData.get("essential"));
-    await db.category.update({
-      where: { id },
-      data: {
-        essentialDefault: essential === "unset" ? null : essential === "true",
-        taxTagDefault: (String(formData.get("taxTag") || "") || null) as never,
-      },
-    });
+  const name = String(formData.get("name") ?? "").trim();
+  if ((intent === "create" || intent === "rename") && !name) categoryDone("name");
+  try {
+    if (intent === "create") {
+      const count = await db.category.count();
+      await db.category.create({ data: { name, sortOrder: count } });
+    }
+    if (intent === "rename") await db.category.update({ where: { id }, data: { name } });
+    if (intent === "archive") await db.category.update({ where: { id }, data: { archivedAt: new Date() } });
+    if (intent === "defaults") {
+      const essential = String(formData.get("essential"));
+      await db.category.update({
+        where: { id },
+        data: {
+          essentialDefault: essential === "unset" ? null : essential === "true",
+          taxTagDefault: (String(formData.get("taxTag") || "") || null) as never,
+        },
+      });
+    }
+    if (intent === "merge") {
+      const into = String(formData.get("into"));
+      await db.expense.updateMany({ where: { categoryId: id }, data: { categoryId: into } });
+      await db.category.update({ where: { id }, data: { archivedAt: new Date() } });
+    }
+  } catch (error) {
+    if (isUniqueConflict(error)) categoryDone("taken");
+    throw error;
   }
-  if (intent === "merge") {
-    const into = String(formData.get("into"));
-    await db.expense.updateMany({ where: { categoryId: id }, data: { categoryId: into } });
-    await db.category.update({ where: { id }, data: { archivedAt: new Date() } });
-  }
-  revalidatePath("/settings");
+  categoryDone();
+}
+
+function settingPath(kind: string) {
+  if (kind.startsWith("payment")) return "/settings/payments";
+  if (kind.startsWith("entity")) return "/settings/entities";
+  return "/settings/merchants";
+}
+
+function settingDone(kind: string, error?: string): never {
+  revalidatePath("/settings", "layout");
+  revalidatePath("/expenses");
+  const path = settingPath(kind);
+  redirect(error ? `${path}?error=${error}` : path);
+}
+
+function last4Of(value: FormDataEntryValue | null) {
+  const digits = String(value ?? "").replace(/\D/g, "").slice(0, 4);
+  return digits || null;
 }
 
 export async function simpleSettingAction(formData: FormData) {
   const { user } = await requireUser();
   const db = forUser(user.id);
   const kind = String(formData.get("kind"));
+  const id = String(formData.get("id") ?? "");
   const name = String(formData.get("name") ?? "").trim();
-  if (kind === "payment") await db.paymentMethod.create({ data: { name, type: String(formData.get("type") ?? "OTHER") as never, last4: String(formData.get("last4") ?? "").slice(0, 4) || null } });
-  if (kind === "entity") {
-    if (formData.get("default") === "on") await db.entity.updateMany({ data: { isDefault: false } });
-    await db.entity.create({ data: { name, isDefault: formData.get("default") === "on" } });
-  }
-  if (kind === "merchant-merge") {
-    const from = String(formData.get("from"));
-    const into = String(formData.get("into"));
-    const source = await db.merchant.findFirst({ where: { id: from } });
-    const target = await db.merchant.findFirst({ where: { id: into } });
-    if (source && target) {
-      await db.expense.updateMany({ where: { merchantId: from }, data: { merchantId: into } });
-      await db.merchant.update({ where: { id: into }, data: { aliases: Array.from(new Set([...target.aliases, ...source.aliases, source.name.toLowerCase()])) } });
-      await db.merchant.delete({ where: { id: from } });
+  const needsName = kind === "payment" || kind === "payment-update" || kind === "entity" || kind === "entity-update" || kind === "merchant" || kind === "merchant-update";
+  if (needsName && !name) settingDone(kind, "name");
+
+  try {
+    if (kind === "payment") {
+      await db.paymentMethod.create({ data: { name, type: String(formData.get("type") ?? "OTHER"), last4: last4Of(formData.get("last4")) } });
     }
+    if (kind === "payment-update") {
+      await db.paymentMethod.update({ where: { id }, data: { name, type: String(formData.get("type") ?? "OTHER"), last4: last4Of(formData.get("last4")) } });
+    }
+    if (kind === "payment-delete") {
+      await db.paymentMethod.delete({ where: { id } });
+    }
+    if (kind === "entity") {
+      const makeDefault = formData.get("default") === "on";
+      if (makeDefault) await db.entity.updateMany({ data: { isDefault: false } });
+      await db.entity.create({ data: { name, isDefault: makeDefault } });
+    }
+    if (kind === "entity-update") {
+      const others = await db.entity.findMany({ where: { id: { not: id }, isDefault: true } });
+      const makeDefault = formData.get("default") === "on" || others.length === 0;
+      if (makeDefault) await db.entity.updateMany({ where: { id: { not: id } }, data: { isDefault: false } });
+      await db.entity.update({ where: { id }, data: { name, isDefault: makeDefault } });
+    }
+    if (kind === "entity-delete") {
+      const entities = await db.entity.findMany();
+      if (entities.length <= 1) settingDone(kind, "last");
+      const usedByExpense = await db.expense.count({ where: { entityId: id, OR: [{ deletedAt: null }, { NOT: { deletedAt: null } }] } });
+      const usedByRecurring = await db.recurringExpense.count({ where: { entityId: id } });
+      if (usedByExpense || usedByRecurring) settingDone(kind, "in-use");
+      const current = entities.find((entity) => entity.id === id);
+      if (current?.isDefault) {
+        const other = entities.find((entity) => entity.id !== id);
+        if (other) await db.entity.update({ where: { id: other.id }, data: { isDefault: true } });
+      }
+      await db.entity.delete({ where: { id } });
+    }
+    if (kind === "merchant") {
+      const alias = normalizeMerchant(name);
+      await db.merchant.create({ data: { name, aliases: alias ? [alias] : [] } });
+    }
+    if (kind === "merchant-update") {
+      const alias = normalizeMerchant(name);
+      const existing = await db.merchant.findFirst({ where: { id } });
+      const aliases = Array.from(new Set([...(existing?.aliases ?? []), alias].filter(Boolean)));
+      await db.merchant.update({ where: { id }, data: { name, aliases } });
+    }
+    if (kind === "merchant-delete") {
+      await db.merchant.delete({ where: { id } });
+    }
+    if (kind === "merchant-merge") {
+      const from = String(formData.get("from"));
+      const into = String(formData.get("into"));
+      if (from === into) settingDone(kind, "same");
+      const source = await db.merchant.findFirst({ where: { id: from } });
+      const target = await db.merchant.findFirst({ where: { id: into } });
+      if (source && target) {
+        await db.expense.updateMany({ where: { merchantId: from }, data: { merchantId: into } });
+        await db.merchant.update({ where: { id: into }, data: { aliases: Array.from(new Set([...target.aliases, ...source.aliases, source.name.toLowerCase()])) } });
+        await db.merchant.delete({ where: { id: from } });
+      }
+    }
+  } catch (error) {
+    if (isUniqueConflict(error)) settingDone(kind, "taken");
+    throw error;
   }
-  revalidatePath("/settings");
+  settingDone(kind);
 }
 
 export async function importAction(formData: FormData) {

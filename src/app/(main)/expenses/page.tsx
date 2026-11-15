@@ -24,6 +24,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     source: one(params.source),
     needsReview: one(params.needsReview),
     new: one(params.new),
+    page: one(params.page),
   };
   const db = forUser(user.id);
   const [listed, categories, methods, entities, merchants] = await Promise.all([
@@ -32,8 +33,8 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       hasReceipt: query.hasReceipt === "true" ? true : query.hasReceipt === "false" ? false : undefined,
       needsReview: query.needsReview === "1",
       source: query.source as "WEB" | "API" | "RECURRING" | "IMPORT" | undefined,
-      limit: 500,
-      cap: 500,
+      page: Math.max(1, Number(query.page) || 1),
+      pageSize: 40,
     }),
     db.category.findMany({ where: { archivedAt: null }, orderBy: { sortOrder: "asc" } }),
     db.paymentMethod.findMany({ orderBy: { name: "asc" } }),
@@ -50,6 +51,9 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       currency={user.currency}
       query={query}
       largeAmountCents={user.largeAmountCents}
+      page={listed.page}
+      pageSize={listed.pageSize}
+      total={listed.total}
     />
   );
 }

@@ -1,0 +1,1 @@
+ALTER TYPE "Frequency" ADD VALUE 'SEMIANNUAL';

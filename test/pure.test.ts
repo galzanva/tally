@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { formatMoney, parseDollarsToCents } from "../src/lib/money";
 import { luhnValid, maskCardNumbers, matchCategoryName, normalizeMerchant } from "../src/lib/text";
+import { planRecurring, type RecurringCharge } from "../src/lib/recurring/plan";
 import { advanceRun, firstRunOn, rateForDate, scheduledYmd } from "../src/lib/recurring/schedule";
 import { resolvePeriod } from "../src/lib/dates";
 
@@ -38,6 +39,61 @@ test("recurring rates and day clamping", () => {
   assert.equal(firstRunOn("2026-08-10", "MONTHLY", 5, null), "2026-09-05");
   assert.equal(advanceRun("2026-01-31", "MONTHLY", 31, null), "2026-02-28");
   assert.equal(advanceRun("2026-02-28", "MONTHLY", 31, null), "2026-03-31");
+});
+
+test("recurring plans follow recent charges", () => {
+  const charge = (occurredOn: string, amountCents: number, merchantName: string, description: string, categoryName: string): RecurringCharge => ({
+    occurredOn,
+    amountCents,
+    description,
+    merchantName,
+    merchantKey: merchantName.toLowerCase(),
+    categoryId: categoryName,
+    categoryName,
+    entityId: "personal",
+    entityName: "Personal",
+    paymentMethodId: null,
+    essential: true,
+  });
+  const plans = planRecurring(
+    [
+      charge("2026-01-05", 1799, "Netflix", "Streaming", "Subscriptions & Streaming"),
+      charge("2026-05-05", 1999, "Netflix", "Streaming", "Subscriptions & Streaming"),
+      charge("2026-09-05", 1999, "Netflix", "Streaming", "Subscriptions & Streaming"),
+      charge("2026-10-05", 1999, "Netflix", "Streaming", "Subscriptions & Streaming"),
+      charge("2026-05-10", 34423, "Upstart", "Loan payment", "Debt Payments"),
+      charge("2026-06-10", 34423, "Upstart", "Loan payment", "Debt Payments"),
+      charge("2026-08-10", 34423, "Upstart", "Loan payment", "Debt Payments"),
+      charge("2026-08-29", 37962, "Tesla Finance", "Tesla lease", "Auto"),
+      charge("2026-09-29", 37962, "Tesla Finance", "Tesla lease", "Auto"),
+      charge("2026-10-29", 37962, "Tesla Finance", "Tesla lease", "Auto"),
+      charge("2026-09-02", 203290, "Bilt", "Rent payment", "Housing"),
+      charge("2026-10-01", 201583, "Bilt", "Rent payment", "Housing"),
+      charge("2026-11-02", 201519, "Bilt", "Rent payment", "Housing"),
+      charge("2026-01-12", 2999, "ESPN", "ESPN subscription", "Subscriptions & Streaming"),
+      charge("2026-04-10", 1199, "ESPN", "ESPN subscription", "Subscriptions & Streaming"),
+    ],
+    "2026-11-15",
+  );
+  const netflix = plans.find((plan) => plan.name === "Netflix");
+  assert.equal(netflix?.status, "ACTIVE");
+  assert.equal(netflix?.amountType, "FIXED");
+  assert.equal(netflix?.rates.at(-1)?.amountCents, 1999);
+  assert.equal(netflix?.rates.some((rate) => rate.amountCents === 1799), true);
+  const upstart = plans.find((plan) => plan.merchantName === "Upstart");
+  assert.equal(upstart?.status, "ACTIVE");
+  assert.equal(upstart?.rates.length, 3);
+  const lease = plans.find((plan) => plan.name === "Tesla lease");
+  assert.equal(lease?.status, "ACTIVE");
+  assert.equal(lease?.amountType, "FIXED");
+  assert.equal(lease?.rates.length, 3);
+  assert.equal(lease?.rates.at(-1)?.amountCents, 37962);
+  const rent = plans.find((plan) => plan.name === "Rent");
+  assert.equal(rent?.amountType, "VARIABLE");
+  assert.equal(rent?.rates.at(-1)?.amountCents, 201519);
+  const espn = plans.find((plan) => plan.name === "ESPN");
+  assert.equal(espn?.status, "ENDED");
+  assert.deepEqual(espn?.rates.map((rate) => rate.amountCents), [2999, 1199]);
 });
 
 test("calendar quarters and last month", () => {

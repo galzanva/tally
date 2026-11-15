@@ -1,6 +1,6 @@
 import { dateOnlyToYmd, daysInMonth, padYmd, ymdToDate } from "@/lib/dates";
 
-export type FrequencyName = "MONTHLY" | "YEARLY";
+export type FrequencyName = "MONTHLY" | "YEARLY" | "SEMIANNUAL";
 
 export function scheduledYmd(year: number, month: number, dayOfMonth: number) {
   const day = Math.min(Math.max(dayOfMonth, 1), daysInMonth(year, month));
@@ -11,6 +11,10 @@ export function advanceRun(currentYmd: string, frequency: FrequencyName, dayOfMo
   const [year, month] = currentYmd.split("-").map(Number);
   if (frequency === "YEARLY") {
     return scheduledYmd(year! + 1, monthOfYear ?? month!, dayOfMonth);
+  }
+  if (frequency === "SEMIANNUAL") {
+    const next = new Date(Date.UTC(year!, month! - 1 + 6, 1));
+    return scheduledYmd(next.getUTCFullYear(), next.getUTCMonth() + 1, dayOfMonth);
   }
   const next = new Date(Date.UTC(year!, month!, 1));
   return scheduledYmd(next.getUTCFullYear(), next.getUTCMonth() + 1, dayOfMonth);
@@ -24,13 +28,20 @@ export function firstRunOn(startOn: string, frequency: FrequencyName, dayOfMonth
     if (candidate < startOn) candidate = scheduledYmd(year! + 1, targetMonth, dayOfMonth);
     return candidate;
   }
+  if (frequency === "SEMIANNUAL") {
+    let candidate = scheduledYmd(year!, month!, dayOfMonth);
+    if (candidate < startOn) candidate = advanceRun(candidate, "SEMIANNUAL", dayOfMonth, null);
+    return candidate;
+  }
   let candidate = scheduledYmd(year!, month!, dayOfMonth);
   if (candidate < startOn) candidate = advanceRun(candidate, "MONTHLY", dayOfMonth, null);
   return candidate;
 }
 
 export function periodKeyFor(frequency: FrequencyName, ymd: string) {
-  return frequency === "YEARLY" ? ymd.slice(0, 4) : ymd.slice(0, 7);
+  if (frequency === "YEARLY") return ymd.slice(0, 4);
+  if (frequency === "SEMIANNUAL") return `${ymd.slice(0, 4)}-${Number(ymd.slice(5, 7)) <= 6 ? "H1" : "H2"}`;
+  return ymd.slice(0, 7);
 }
 
 export function rateForDate<T extends { amountCents: number; effectiveFrom: string }>(rates: T[], ymd: string) {

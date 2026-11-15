@@ -155,6 +155,8 @@ export async function listExpenses(userId: string, filters: {
   limit?: number;
   cap?: number;
   cursor?: string;
+  page?: number;
+  pageSize?: number;
 }) {
   const { user, db, categories, merchants, entities, paymentMethods } = await loadContext(userId);
   const range = filters.period === "all" && !filters.from && !filters.to
@@ -196,16 +198,31 @@ export async function listExpenses(userId: string, filters: {
         }
       : {}),
   };
+  const orderBy = [{ occurredOn: "desc" as const }, { createdAt: "desc" as const }];
+  if (filters.page) {
+    const pageSize = Math.min(Math.max(filters.pageSize ?? 40, 1), 100);
+    const total = await db.expense.count({ where });
+    const pages = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(Math.max(filters.page, 1), pages);
+    const rows = await db.expense.findMany({
+      where,
+      include,
+      orderBy,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+    return { expenses: rows.map((row) => toExpenseDTO(row, user.currency)), nextCursor: null, range, total, page, pageSize };
+  }
   const rows = await db.expense.findMany({
     where,
     include,
-    orderBy: [{ occurredOn: "desc" }, { createdAt: "desc" }],
+    orderBy,
     take: limit + 1,
     ...(filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {}),
   });
   const page = rows.slice(0, limit);
   const nextCursor = rows.length > limit ? page[page.length - 1]?.id ?? null : null;
-  return { expenses: page.map((row) => toExpenseDTO(row, user.currency)), nextCursor, range };
+  return { expenses: page.map((row) => toExpenseDTO(row, user.currency)), nextCursor, range, total: page.length, page: 1, pageSize: limit };
 }
 
 async function resolveMerchant(ctx: Awaited<ReturnType<typeof loadContext>>, raw?: string | null) {

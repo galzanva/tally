@@ -43,6 +43,7 @@ export async function chat(options: {
   if (used >= options.cap) throw new AppError(429, "ai_cap", AI_CAP_MESSAGE);
 
   const base = process.env.LLM_BASE_URL!.replace(/\/$/, "");
+  const deepseek = base.includes("deepseek.com");
   const response = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers: {
@@ -53,6 +54,7 @@ export async function chat(options: {
       model: process.env.LLM_MODEL,
       temperature: 0.2,
       messages: options.messages,
+      ...(deepseek ? { thinking: { type: "disabled" } } : {}),
       tools: options.tools?.map((tool) => ({
         type: "function",
         function: { name: tool.name, description: tool.description, parameters: tool.parameters },

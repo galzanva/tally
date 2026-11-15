@@ -28,6 +28,9 @@ export function ExpensesBoard(props: {
   currency: string;
   query: Record<string, string | undefined>;
   largeAmountCents: number;
+  page: number;
+  pageSize: number;
+  total: number;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(props.query.new === "1");
@@ -43,8 +46,11 @@ export function ExpensesBoard(props: {
   }, [props.expenses]);
 
   function push(next: Record<string, string | undefined>) {
+    const merged: Record<string, string | undefined> = { ...props.query, ...next };
+    if (!Object.hasOwn(next, "page")) delete merged.page;
+    if (merged.page === "1") delete merged.page;
     const params = new URLSearchParams();
-    for (const [key, value] of Object.entries({ ...props.query, ...next })) {
+    for (const [key, value] of Object.entries(merged)) {
       if (value && key !== "new") params.set(key, value);
     }
     router.push(`/expenses?${params.toString()}`);
@@ -62,6 +68,10 @@ export function ExpensesBoard(props: {
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-display text-3xl tracking-tight">Expenses</h1>
+        <Button onClick={() => { setEditing(null); setOpen(true); }}>Add expense</Button>
+      </div>
       <div className="flex flex-wrap gap-2">
         {periods.map(([key, label]) => (
           <Chip key={key} active={(props.query.period ?? "ytd") === key} onClick={() => push({ period: key })}>{label}</Chip>
@@ -91,6 +101,7 @@ export function ExpensesBoard(props: {
           </Select>
         </Panel>
       ) : null}
+      <ExpensePager page={props.page} pageSize={props.pageSize} total={props.total} hrefFor={(page) => pageHref(props.query, page)} />
       {props.expenses.length === 0 ? (
         <EmptyState title="No expenses in this period." body="Add one here, or send it through OpenClaw." action={<Button onClick={() => { setEditing(null); setOpen(true); }}>Add expense</Button>} />
       ) : groups.map(([day, rows]) => (
@@ -118,8 +129,9 @@ export function ExpensesBoard(props: {
           </ul>
         </section>
       ))}
-      <div className="flex justify-end">
-        <a className="inline-flex min-h-11 items-center text-sm text-accent" href={`/api/export/expenses?${new URLSearchParams(Object.entries(props.query).filter((entry): entry is [string, string] => Boolean(entry[1] && entry[0] !== "new")))}`}>Export CSV</a>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <a className="inline-flex min-h-11 items-center text-sm text-accent" href={`/api/export/expenses?${new URLSearchParams(Object.entries(props.query).filter((entry): entry is [string, string] => Boolean(entry[1] && entry[0] !== "new" && entry[0] !== "page")))}`}>Export CSV</a>
+        <ExpensePager page={props.page} pageSize={props.pageSize} total={props.total} hrefFor={(page) => pageHref(props.query, page)} />
       </div>
       <ExpenseEditor key={editing?.id ?? "new"} open={open} expense={editing} onOpenChange={setOpen} {...props} onDelete={setConfirm} />
       <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} query={props.query} push={push} categories={props.categories} methods={props.methods} entities={props.entities} />
@@ -136,6 +148,44 @@ export function ExpensesBoard(props: {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function pageHref(query: Record<string, string | undefined>, page: number) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value && key !== "new" && key !== "page") params.set(key, value);
+  }
+  if (page > 1) params.set("page", String(page));
+  const search = params.toString();
+  return search ? `/expenses?${search}` : "/expenses";
+}
+
+function ExpensePager({ page, pageSize, total, hrefFor }: { page: number; pageSize: number; total: number; hrefFor: (page: number) => string }) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (total === 0) return null;
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(total, page * pageSize);
+  const numbers = new Set([1, pages, page - 1, page, page + 1]);
+  const visible = [...numbers].filter((number) => number >= 1 && number <= pages).sort((a, b) => a - b);
+  const itemClass = "inline-flex size-11 items-center justify-center rounded-full text-sm tabular";
+  return (
+    <nav className="flex flex-wrap items-center justify-between gap-3" aria-label="Pagination">
+      <p className="text-sm text-muted tabular">{start}–{end} of {total}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {page <= 1 ? <span className="inline-flex min-h-11 items-center rounded-full border border-white/10 px-4 text-sm opacity-50">Previous</span> : <a className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-4 text-sm" href={hrefFor(page - 1)}>Previous</a>}
+        {visible.map((number, index) => {
+          const previous = visible[index - 1];
+          return (
+            <span key={number} className="flex items-center gap-2">
+              {previous && number - previous > 1 ? <span className="text-muted">…</span> : null}
+              <a className={`${itemClass} ${number === page ? "bg-accent text-on-accent" : "border border-white/10"}`} href={hrefFor(number)} aria-current={number === page ? "page" : undefined}>{number}</a>
+            </span>
+          );
+        })}
+        {page >= pages ? <span className="inline-flex min-h-11 items-center rounded-full border border-white/10 px-4 text-sm opacity-50">Next</span> : <a className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-4 text-sm" href={hrefFor(page + 1)}>Next</a>}
+      </div>
+    </nav>
   );
 }
 

@@ -37,7 +37,7 @@ if (report.unmapped.length) {
   console.log("\nUnmapped categories");
   for (const row of report.unmapped) console.log(`${row.count}\t${row.value}`);
 }
-if (report.recurring) console.log(`\nRecurring templates created: ${report.recurring}`);
+if (report.recurring) console.log(`\nRecurring templates: ${report.recurring}`);
 }
 
 main();

@@ -12,6 +12,12 @@ const ReviewSchema = z.object({
   bodyMd: z.string().min(1).max(6000),
 });
 
+function monthlyShare(frequency: string, amountCents: number) {
+  if (frequency === "MONTHLY") return amountCents;
+  if (frequency === "SEMIANNUAL") return Math.round(amountCents / 6);
+  return Math.round(amountCents / 12);
+}
+
 async function postedInRange(userId: string, from: string, to: string) {
   const db = forUser(userId);
   return db.expense.findMany({
@@ -72,7 +78,7 @@ export async function buildMonthlyFacts(userId: string, periodKey?: string) {
     .map((rate) => ({ name: rate.recurring.name, toCents: rate.amountCents, effectiveFrom: dateOnlyToYmd(rate.effectiveFrom) }));
   const recurring = await listRecurring(userId);
   const subscriptions = recurring.filter((item) => item.status === "ACTIVE" && (item.category === "Subscriptions & Streaming" || item.category === "Software & AI"));
-  const subscriptionsMonthlyCents = subscriptions.reduce((total, item) => total + (item.frequency === "MONTHLY" ? item.amountCents : Math.round(item.amountCents / 12)), 0);
+  const subscriptionsMonthlyCents = subscriptions.reduce((total, item) => total + monthlyShare(item.frequency, item.amountCents), 0);
   const discretionary = current.filter((row) => row.essential === false);
   const discretionaryCents = sum(discretionary);
   const merchantTotals = new Map<string, number>();
@@ -92,7 +98,7 @@ export async function buildMonthlyFacts(userId: string, periodKey?: string) {
   const priorDining = Math.round(priorSets.reduce((total, rows) => total + sum(rows.filter((row) => row.category?.name === "Dining")), 0) / 3);
   if (diningCents > priorDining) savings.push({ title: "Bring dining back to the recent average", monthlyCents: diningCents - priorDining });
   const dearestSub = [...subscriptions].sort((a, b) => b.amountCents - a.amountCents)[0];
-  if (dearestSub) savings.push({ title: `Cancel ${dearestSub.name} if it isn't earning its keep`, monthlyCents: dearestSub.frequency === "MONTHLY" ? dearestSub.amountCents : Math.round(dearestSub.amountCents / 12) });
+  if (dearestSub) savings.push({ title: `Cancel ${dearestSub.name} if it isn't earning its keep`, monthlyCents: monthlyShare(dearestSub.frequency, dearestSub.amountCents) });
   const top = topDiscretionaryMerchants[0];
   if (top) savings.push({ title: `Skip one round at ${top.name}`, monthlyCents: Math.round(top.cents / Math.max(1, discretionary.filter((row) => (row.merchant?.name ?? row.description) === top.name).length)) });
   return {

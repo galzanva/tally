@@ -3,10 +3,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import ExcelJS from "exceljs";
 import type { TaxTag } from "@prisma/client";
-import { dateOnlyToYmd, ymdToDate } from "@/lib/dates";
+import { dateOnlyToYmd, todayYmd, ymdToDate } from "@/lib/dates";
 import { forUser, isUniqueConflict, prisma } from "@/lib/db";
 import { parseDollarsToCents } from "@/lib/money";
-import { firstRunOn } from "@/lib/recurring/schedule";
+import { planRecurring, type RecurringCharge } from "@/lib/recurring/plan";
 import { canonicalMerchantName, maskCardNumbers, normalizeMerchant } from "@/lib/text";
 
 type Raw = Record<string, unknown>;
@@ -24,12 +24,12 @@ export type ImportReport = {
 const mapPath = path.join(process.cwd(), "scripts", "category-map.json");
 
 function cellValue(value: ExcelJS.CellValue): unknown {
-  if (value && typeof value === "object") {
-    if ("result" in value) return value.result;
-    if ("text" in value && typeof value.text === "string") return value.text;
-    if ("richText" in value && Array.isArray(value.richText)) return value.richText.map((part) => part.text).join("");
-  }
-  return value ?? null;
+  if (value == null || typeof value !== "object") return value ?? null;
+  if (value instanceof Date) return value;
+  if ("richText" in value && Array.isArray(value.richText)) return value.richText.map((part) => part.text).join("");
+  if ("text" in value) return cellValue(value.text as ExcelJS.CellValue);
+  if ("result" in value) return cellValue(value.result as ExcelJS.CellValue);
+  return null;
 }
 
 function text(value: unknown) {
@@ -39,9 +39,7 @@ function text(value: unknown) {
 }
 
 function parseDate(value: unknown): string | null {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
-  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return dateOnlyToYmd(value);
   if (typeof value === "number" && Number.isFinite(value)) {
     const epoch = Date.UTC(1899, 11, 30);
     return dateOnlyToYmd(new Date(epoch + Math.round(value) * 86_400_000));
@@ -107,7 +105,14 @@ function paymentFromNotes(notes: string, methods: { id: string; name: string }[]
   for (const rule of rules) {
     if (rule.pattern.test(notes)) {
       const method = methods.find((item) => item.name === rule.name);
-      return { paymentMethodId: method?.id ?? null, notes: notes.replace(rule.pattern, "").replace(/\s{2,}/g, " ").trim() };
+      const cleaned = notes
+        .replace(rule.pattern, " ")
+        .replace(/\b(?:debit\s+|credit\s+)?card\b/gi, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim()
+        .replace(/^\((.*)\)$/, "$1")
+        .trim();
+      return { paymentMethodId: method?.id ?? null, notes: cleaned };
     }
   }
   return { paymentMethodId: null, notes };
@@ -127,7 +132,11 @@ export async function importWorkbook(source: string | Buffer, options: { email: 
   const lookup = new Map(Object.entries(categoryMap).map(([key, value]) => [key.toLowerCase(), value]));
   const byName = new Map(categories.map((category) => [category.name, category]));
   const personal = entities.find((entity) => entity.isDefault) ?? entities.find((entity) => entity.name === "Personal");
-  const llc = entities.find((entity) => entity.name === "Galzan VA LLC");
+  let llc = entities.find((entity) => entity.name === "Galzan VA LLC");
+  if (!llc && !options.dryRun) {
+    llc = await db.entity.create({ data: { name: "Galzan VA LLC" } });
+    entities.push(llc);
+  }
   const trading = entities.find((entity) => entity.name === "Trading");
   if (!personal) throw new Error("Personal entity is missing.");
 
@@ -173,28 +182,49 @@ export async function importWorkbook(source: string | Buffer, options: { email: 
       }
       return null;
     };
+    const readRaw = (row: ExcelJS.Row): Raw => ({
+      date: pick(row, "date"),
+      total: pick(row, "total"),
+      items: pick(row, "items", "item"),
+      category: pick(row, "category"),
+      merchant: pick(row, "merchant"),
+      receiptLink: pick(row, "receipt link", "receipt"),
+      notes: pick(row, "notes", "note"),
+      recurring: pick(row, "recurring"),
+      essential: pick(row, "essential"),
+      monthlyFee: pick(row, "monthly fee", "monthlyfee"),
+      active: pick(row, "active"),
+    });
     let sheetCents = 0;
     let importedCents = 0;
+    let consumeRow = 0;
     sheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
-      const raw: Raw = {
-        date: pick(row, "date"),
-        total: pick(row, "total"),
-        items: pick(row, "items", "item"),
-        category: pick(row, "category"),
-        merchant: pick(row, "merchant"),
-        receiptLink: pick(row, "receipt link", "receipt"),
-        notes: pick(row, "notes", "note"),
-        recurring: pick(row, "recurring"),
-        essential: pick(row, "essential"),
-        monthlyFee: pick(row, "monthly fee", "monthlyfee"),
-        active: pick(row, "active"),
-      };
+      const raw = readRaw(row);
       const blank = [raw.date, raw.total, raw.items, raw.category, raw.merchant].every((value) => text(value) === "" && !(value instanceof Date) && typeof value !== "number");
       if (blank) return;
       report.read += 1;
+      const listedCents = parseAmount(raw.total);
+      if (listedCents != null) sheetCents += listedCents;
+      if (rowNumber === consumeRow) {
+        report.skipped += 1;
+        return;
+      }
+      let split = false;
+      const next = readRaw(sheet.getRow(rowNumber + 1));
+      if (parseDate(raw.date) && listedCents == null && text(raw.total) && parseAmount(next.total) != null && !parseDate(next.date) && text(next.date)) {
+        const category = text(raw.items);
+        const description = [text(raw.category), text(next.date)].filter(Boolean).join(", ");
+        raw.merchant = text(raw.merchant) || text(raw.total);
+        raw.category = category;
+        raw.items = description || category;
+        raw.total = next.total;
+        if (!text(raw.recurring)) raw.recurring = next.items;
+        if (!text(raw.essential)) raw.essential = next.category;
+        consumeRow = rowNumber + 1;
+        split = true;
+      }
       const amountCents = parseAmount(raw.total);
-      if (amountCents != null) sheetCents += amountCents;
       const fixed = repair(raw);
       const occurredOn = parseDate(fixed.row.date);
       if (!occurredOn || amountCents == null) {
@@ -203,13 +233,41 @@ export async function importWorkbook(source: string | Buffer, options: { email: 
       }
       const reasons: string[] = [];
       if (fixed.shifted) reasons.push("repaired column shift");
+      if (split) reasons.push("repaired split row");
       const originalCategory = text(fixed.row.category);
+      const itemsText = text(fixed.row.items);
+      const merchantText = text(fixed.row.merchant);
+      const detail = `${originalCategory} ${itemsText} ${merchantText} ${text(fixed.row.notes)}`;
       let mapped = lookup.get(originalCategory.toLowerCase()) ?? null;
       let taxTag: TaxTag = "UNREVIEWED";
       if (/property tax/i.test(originalCategory)) {
         mapped = "Auto";
         taxTag = "PROPERTY_TAX";
       } else if (mapped === "Taxes") taxTag = "TAX_PAYMENT";
+      if (/haircut|salon/i.test(detail)) mapped = "Supplements & Personal Care";
+      if (/^office supplies$/i.test(originalCategory) && /\bwater\b/i.test(itemsText)) mapped = "Groceries";
+      if (/topstep/i.test(detail)) {
+        mapped = "Trading";
+        if (!merchantText || /^trading$/i.test(merchantText)) fixed.row.merchant = "Topstep";
+      }
+      if (/virginia scc|llc licens/i.test(detail)) mapped = mapped ?? "Other";
+      if (/eztaxreturn|tax preparation/i.test(detail)) {
+        mapped = "Taxes";
+        taxTag = "UNREVIEWED";
+      }
+      if (/\blease\b/i.test(itemsText)) {
+        mapped = "Auto";
+        if (/tesla/i.test(detail)) fixed.row.merchant = "Tesla Finance";
+      }
+      if (/property tax/i.test(detail)) {
+        mapped = "Auto";
+        taxTag = "PROPERTY_TAX";
+      }
+      if (/youtube premium/i.test(detail)) fixed.row.merchant = "YouTube Premium";
+      if (/car insurance|auto insurance/i.test(itemsText)) mapped = "Auto";
+      if (/boost mobile/i.test(merchantText) || /phone service|phone bill/i.test(itemsText)) mapped = "Utilities";
+      if (/cox communications/i.test(merchantText) || /internet\/cable/i.test(itemsText)) mapped = "Utilities";
+      if (/\bcursor\b|ai ide/i.test(`${merchantText} ${itemsText}`)) mapped = "Software & AI";
       if (!mapped) {
         reasons.push("unmapped category");
         unmapped.set(originalCategory || "(blank)", (unmapped.get(originalCategory || "(blank)") ?? 0) + 1);
@@ -225,8 +283,11 @@ export async function importWorkbook(source: string | Buffer, options: { email: 
       let notes = text(fixed.row.notes);
       const pay = paymentFromNotes(notes, methods);
       notes = maskCardNumbers(pay.notes);
-      const blob = `${items} ${notes}`;
-      const entityId = /galzan\s*va/i.test(blob) ? llc?.id ?? personal.id : mapped === "Trading" ? trading?.id ?? personal.id : personal.id;
+      const link = text(fixed.row.receiptLink);
+      if (/^https?:\/\//i.test(link) && !notes.includes(link)) notes = [notes, link].filter(Boolean).join("\n");
+      const blob = `${items} ${notes} ${merchantName}`;
+      const business = /galzan\s*va|virginia scc|llc licens/i.test(blob) || merchantName === "DigitalOcean";
+      const entityId = business ? llc?.id ?? personal.id : mapped === "Trading" ? trading?.id ?? personal.id : personal.id;
       const essentialFlag = truthy(fixed.row.essential);
       const recurringFlag = truthy(fixed.row.recurring);
       const activeFlag = truthy(fixed.row.active);
@@ -260,7 +321,26 @@ export async function importWorkbook(source: string | Buffer, options: { email: 
   }
 
   report.unmapped = [...unmapped.entries()].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count);
-  if (options.dryRun) return report;
+  const categoryNameById = new Map([...byName.entries()].map(([name, category]) => [category.id, name]));
+  const entityNameById = new Map(entities.map((entity) => [entity.id, entity.name]));
+  const recurringCharges: RecurringCharge[] = prepared.map((row) => ({
+    occurredOn: row.occurredOn,
+    amountCents: row.amountCents,
+    description: row.description,
+    merchantName: row.merchantName,
+    merchantKey: normalizeMerchant(row.merchantName),
+    categoryId: row.categoryId,
+    categoryName: categoryNameById.get(row.categoryId) ?? "Other",
+    entityId: row.entityId,
+    entityName: entityNameById.get(row.entityId) ?? "Personal",
+    paymentMethodId: row.paymentMethodId,
+    essential: row.essential,
+  }));
+  const recurringPlans = planRecurring(recurringCharges, todayYmd(user.timezone));
+  if (options.dryRun) {
+    report.recurring = recurringPlans.length;
+    return report;
+  }
 
   const merchants = await db.merchant.findMany();
   const merchantByAlias = new Map<string, string>();
@@ -302,42 +382,27 @@ export async function importWorkbook(source: string | Buffer, options: { email: 
   }
 
   if (options.createRecurring) {
-    const groups = new Map<string, typeof prepared>();
-    for (const row of prepared.filter((item) => item.recurring)) {
-      const key = normalizeMerchant(row.merchantName);
-      groups.set(key, [...(groups.get(key) ?? []), row]);
-    }
-    for (const rows of groups.values()) {
-      const ordered = [...rows].sort((a, b) => a.occurredOn.localeCompare(b.occurredOn));
-      const latest = ordered[ordered.length - 1]!;
-      const name = latest.merchantName;
-      const existing = await db.recurringExpense.findFirst({ where: { name } });
+    for (const plan of recurringPlans) {
+      const existing = await db.recurringExpense.findFirst({ where: { name: plan.name, entityId: plan.entityId } });
       if (existing) continue;
-      const amounts: { cents: number; from: string }[] = [];
-      for (const row of ordered) {
-        const cents = row.monthlyFeeCents ?? row.amountCents;
-        if (!amounts.some((item) => item.cents === cents)) amounts.push({ cents, from: row.occurredOn });
-      }
-      const startOn = ordered[0]!.occurredOn;
-      const day = Number(latest.occurredOn.slice(8));
-      const ended = ordered.every((row) => !row.active);
       await db.recurringExpense.create({
         data: {
-          name,
-          merchantId: merchantByAlias.get(normalizeMerchant(name)) ?? null,
-          categoryId: latest.categoryId,
-          paymentMethodId: latest.paymentMethodId,
-          entityId: latest.entityId,
+          name: plan.name,
+          merchantId: merchantByAlias.get(plan.merchantKey) ?? null,
+          categoryId: plan.categoryId,
+          paymentMethodId: plan.paymentMethodId,
+          entityId: plan.entityId,
           taxTag: "UNREVIEWED",
-          essential: latest.essential,
-          frequency: "MONTHLY",
-          dayOfMonth: day,
-          amountType: ordered.some((row) => row.variable) ? "VARIABLE" : "FIXED",
-          status: ended ? "ENDED" : "ACTIVE",
-          startOn: ymdToDate(startOn),
-          endOn: ended ? ymdToDate(latest.occurredOn) : null,
-          nextRunOn: ymdToDate(ended ? latest.occurredOn : firstRunOn(startOn, "MONTHLY", day, null)),
-          rates: { create: amounts.map((item) => ({ amountCents: item.cents, effectiveFrom: ymdToDate(item.from) })) },
+          essential: plan.essential,
+          frequency: plan.frequency,
+          dayOfMonth: plan.dayOfMonth,
+          monthOfYear: plan.monthOfYear,
+          amountType: plan.amountType,
+          status: plan.status,
+          startOn: ymdToDate(plan.startOn),
+          endOn: plan.endOn ? ymdToDate(plan.endOn) : null,
+          nextRunOn: ymdToDate(plan.nextRunOn),
+          rates: { create: plan.rates.map((rate) => ({ amountCents: rate.amountCents, effectiveFrom: ymdToDate(rate.effectiveFrom) })) },
         },
       });
       report.recurring += 1;

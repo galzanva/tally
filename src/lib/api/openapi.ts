@@ -32,7 +32,7 @@ export const PairSchema = z.object({
 export const RecurringCreateSchema = z.object({
   name: z.string().min(1, "Name the recurring bill."),
   amount: AmountSchema,
-  frequency: z.enum(["MONTHLY", "YEARLY"]),
+  frequency: z.enum(["MONTHLY", "YEARLY", "SEMIANNUAL"]),
   dayOfMonth: z.number().int().min(1).max(31),
   monthOfYear: z.number().int().min(1).max(12).optional(),
   amountType: z.enum(["FIXED", "VARIABLE"]),
