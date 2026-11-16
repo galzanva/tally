@@ -23,9 +23,9 @@ export function SettingsMenu({ groups }: { groups: { label: string; items: { hre
       {groups.map((group) => (
         <section key={group.label}>
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted">{group.label}</p>
-          <ul className="mt-2 overflow-hidden rounded-3xl border border-white/10 bg-panel">
+          <ul className="mt-2 overflow-hidden rounded-3xl border border-line bg-panel">
             {group.items.map((item) => (
-              <li key={item.href} className="border-t border-white/10 first:border-t-0">
+              <li key={item.href} className="border-t border-line first:border-t-0">
                 <Link href={item.href} className="flex min-h-16 items-center gap-3 px-4 py-3">
                   <span className="min-w-0 flex-1">
                     <span className="block">{item.title}</span>

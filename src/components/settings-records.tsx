@@ -8,7 +8,7 @@ const paymentTypes = ["DEBIT", "CREDIT", "CASH", "TRANSFER", "OTHER"];
 
 function Row({ title, detail, onEdit, onDelete }: { title: string; detail?: string; onEdit: () => void; onDelete: () => void }) {
   return (
-    <li className="border-t border-white/10 py-3 first:border-t-0">
+    <li className="border-t border-line py-3 first:border-t-0">
       <p className="font-medium">{title}</p>
       {detail ? <p className="mt-0.5 text-sm text-muted">{detail}</p> : null}
       <div className="mt-2 flex flex-wrap gap-2">

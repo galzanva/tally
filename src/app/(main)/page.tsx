@@ -46,29 +46,29 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
         {chips.map(([key, label]) => (
-          <Link key={key} href={`/?period=${key}`} className={`inline-flex min-h-11 items-center rounded-full px-3 text-sm ${period === key ? "bg-accent text-on-accent" : "border border-white/10"}`}>{label}</Link>
+          <Link key={key} href={`/?period=${key}`} className={`inline-flex min-h-11 items-center rounded-full px-3 text-sm ${period === key ? "bg-accent text-on-accent" : "border border-line"}`}>{label}</Link>
         ))}
         <form className="flex flex-wrap gap-2" action="/">
           <input type="hidden" name="period" value="custom" />
-          <input name="from" type="date" className="min-h-11 rounded-2xl border border-white/10 bg-white/5 px-3" aria-label="From" />
-          <input name="to" type="date" className="min-h-11 rounded-2xl border border-white/10 bg-white/5 px-3" aria-label="To" />
-          <button className="min-h-11 rounded-full border border-white/10 px-3 text-sm">Custom</button>
+          <input name="from" type="date" className="min-h-11 rounded-2xl border border-line bg-surface px-3" aria-label="From" />
+          <input name="to" type="date" className="min-h-11 rounded-2xl border border-line bg-surface px-3" aria-label="To" />
+          <button className="min-h-11 rounded-full border border-line px-3 text-sm">Custom</button>
         </form>
       </div>
       <Panel>
         <Eyebrow>{summary.period.label}</Eyebrow>
         <MoneyText cents={summary.totalCents} currency={user.currency} className="mt-2 block font-display text-5xl" />
         <p className="mt-2 text-sm text-muted">{summary.deltaPercent == null ? "No previous period to compare." : `${summary.deltaPercent > 0 ? "+" : ""}${summary.deltaPercent}% vs the previous period`}</p>
-        <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
+        <div className="mt-4 h-3 overflow-hidden rounded-full bg-surface-strong">
           {essentialTotal !== 0 ? (
             <div className="flex h-full">
-              <div style={{ width: `${(summary.essentialCents / essentialTotal) * 100}%` }} className="bg-white" />
+              <div style={{ width: `${(summary.essentialCents / essentialTotal) * 100}%` }} className="bg-ink" />
               <div style={{ width: `${(summary.discretionaryCents / essentialTotal) * 100}%` }} className="bg-accent" />
-              <div style={{ width: `${(summary.untaggedCents / essentialTotal) * 100}%` }} className="bg-white/30" />
+              <div style={{ width: `${(summary.untaggedCents / essentialTotal) * 100}%` }} className="bg-ink/30" />
             </div>
           ) : null}
         </div>
-        <p className="mt-2 text-xs text-muted">White essential · mint discretionary</p>
+        <p className="mt-2 text-xs text-muted">Solid bar essential · mint discretionary</p>
       </Panel>
       <Panel>
         <h2 className="font-display text-2xl">Categories</h2>
@@ -77,7 +77,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             <li key={group.key}>
               <Link href={`/expenses?period=${period}&category=${encodeURIComponent(group.label)}`} className="block min-h-11">
                 <span className="flex justify-between text-sm"><span>{group.label}</span><span className="tabular">{group.totalFormatted}</span></span>
-                <span className="mt-1 block h-1.5 rounded-full bg-white/10"><span className="block h-full rounded-full bg-accent" style={{ width: `${(group.totalCents / maxCategory) * 100}%` }} /></span>
+                <span className="mt-1 block h-1.5 rounded-full bg-surface-strong"><span className="block h-full rounded-full bg-accent" style={{ width: `${(group.totalCents / maxCategory) * 100}%` }} /></span>
               </Link>
             </li>
           ))}

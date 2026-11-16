@@ -12,7 +12,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${outfit.variable} ${fraunces.variable}`}>
+    <html lang="en" data-theme="dark" className={`${outfit.variable} ${fraunces.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem("tally-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}})();` }} />
+      </head>
       <body className="font-sans antialiased">{children}</body>
     </html>
   );

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { House, Landmark, Plus, Receipt, Repeat, Settings, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { House, Landmark, Moon, Plus, Receipt, Repeat, Settings, Sparkles, Sun } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 const links = [
@@ -23,25 +24,50 @@ export function BackgroundGlows() {
   );
 }
 
+export function ThemeToggle() {
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
+  useEffect(() => {
+    setTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
+  }, []);
+  function choose(next: "light" | "dark") {
+    setTheme(next);
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("tally-theme", next);
+  }
+  return (
+    <div className="inline-flex rounded-full border border-line p-0.5" role="group" aria-label="Appearance">
+      <button type="button" data-theme-choice="light" aria-pressed={theme === "light"} className="inline-flex min-h-10 items-center gap-1 rounded-full px-2.5 text-sm text-muted" onClick={() => choose("light")}>
+        <Sun className="size-4" /> Light
+      </button>
+      <button type="button" data-theme-choice="dark" aria-pressed={theme === "dark"} className="inline-flex min-h-10 items-center gap-1 rounded-full px-2.5 text-sm text-muted" onClick={() => choose("dark")}>
+        <Moon className="size-4" /> Dark
+      </button>
+    </div>
+  );
+}
+
 export function TopBar() {
   const pathname = usePathname();
   return (
-    <header className="sticky top-0 z-30 border-b border-white/10 bg-bg/80 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-4">
+    <header className="sticky top-0 z-30 border-b border-line bg-bg/80 backdrop-blur-xl">
+      <div className="mx-auto flex min-h-16 w-full max-w-6xl flex-wrap items-center gap-3 px-4 py-2">
         <Link href="/" className="font-display text-2xl tracking-tight">Tally</Link>
         <nav className="ml-4 hidden items-center gap-1 md:flex" aria-label="Primary">
           {links.map((link) => {
             const active = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
             return (
-              <Link key={link.href} href={link.href} className={cn("inline-flex min-h-11 items-center rounded-full px-3 text-sm", active ? "bg-white/10 text-fg" : "text-muted hover:text-fg")} aria-current={active ? "page" : undefined}>
+              <Link key={link.href} href={link.href} className={cn("inline-flex min-h-11 items-center rounded-full px-3 text-sm", active ? "bg-surface-strong text-fg" : "text-muted hover:text-fg")} aria-current={active ? "page" : undefined}>
                 {link.label}
               </Link>
             );
           })}
         </nav>
-        <Link href="/settings" className="ml-auto inline-flex size-11 items-center justify-center rounded-full hover:bg-white/5" aria-label="Settings">
+        <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle />
+          <Link href="/settings" className="inline-flex size-11 items-center justify-center rounded-full hover:bg-surface" aria-label="Settings">
           <Settings className="size-5" />
-        </Link>
+          </Link>
+        </div>
       </div>
     </header>
   );
@@ -50,7 +76,7 @@ export function TopBar() {
 export function Dock() {
   const pathname = usePathname();
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-bg/90 backdrop-blur-xl md:hidden" aria-label="Primary" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-bg/90 backdrop-blur-xl md:hidden" aria-label="Primary" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
       <ul className="grid grid-cols-5">
         {links.map((link) => {
           const active = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);

@@ -94,11 +94,11 @@ export function ExpensesBoard(props: {
         <EmptyState title="No expenses in this period." body="Add one here, or send it through OpenClaw." action={<Button onClick={() => { setEditing(null); setOpen(true); }}>Add expense</Button>} />
       ) : groups.map(([day, rows]) => (
         <section key={day}>
-          <div className="sticky top-16 z-10 -mx-4 flex items-center justify-between bg-bg/90 px-4 py-2 backdrop-blur-md">
+          <div className="sticky top-16 z-10 -mx-4 flex items-center justify-between bg-bg px-4 py-2">
             <h2 className="text-sm text-muted">{formatWeekday(day)}</h2>
             <MoneyText cents={rows.reduce((sum, row) => sum + row.amountCents, 0)} currency={props.currency} className="text-sm" />
           </div>
-          <ul className="divide-y divide-white/5">
+          <ul className="divide-y divide-line">
             {rows.map((expense) => (
               <li key={expense.id} className="flex min-h-11 items-center gap-3 py-3">
                 <input type="checkbox" className="size-5" checked={selected.includes(expense.id)} onChange={(event) => setSelected(event.target.checked ? [...selected, expense.id] : selected.filter((id) => id !== expense.id))} aria-label={`Select ${expense.description}`} />
@@ -107,7 +107,7 @@ export function ExpensesBoard(props: {
                     <span className="truncate font-medium">{expense.merchant || expense.description}</span>
                     {expense.receiptIds.length > 0 ? <Camera className="size-4 text-muted" aria-label="Has receipt" /> : null}
                     {expense.needsReview ? <span className="size-2 rounded-full bg-warn" title="Needs review" /> : null}
-                    {expense.status === "PENDING_CONFIRM" ? <span className="size-2 rounded-full bg-white/70" title="Estimate" /> : null}
+                    {expense.status === "PENDING_CONFIRM" ? <span className="size-2 rounded-full bg-ink/70" title="Estimate" /> : null}
                   </span>
                   <span className="block truncate text-sm text-muted">{expense.category} · {expense.entity}</span>
                 </button>
@@ -149,17 +149,17 @@ function ExpensePager({ page, pageSize, total, hrefFor }: { page: number; pageSi
     <nav className="flex flex-wrap items-center justify-between gap-3" aria-label="Pagination">
       <p className="text-sm text-muted tabular">{start}–{end} of {total}</p>
       <div className="flex flex-wrap items-center gap-2">
-        {page <= 1 ? <span className="inline-flex min-h-11 items-center rounded-full border border-white/10 px-4 text-sm opacity-50">Previous</span> : <a className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-4 text-sm" href={hrefFor(page - 1)}>Previous</a>}
+        {page <= 1 ? <span className="inline-flex min-h-11 items-center rounded-full border border-line px-4 text-sm opacity-50">Previous</span> : <a className="inline-flex min-h-11 items-center rounded-full border border-line bg-surface px-4 text-sm" href={hrefFor(page - 1)}>Previous</a>}
         {visible.map((number, index) => {
           const previous = visible[index - 1];
           return (
             <span key={number} className="flex items-center gap-2">
               {previous && number - previous > 1 ? <span className="text-muted">…</span> : null}
-              <a className={`${itemClass} ${number === page ? "bg-accent text-on-accent" : "border border-white/10"}`} href={hrefFor(number)} aria-current={number === page ? "page" : undefined}>{number}</a>
+              <a className={`${itemClass} ${number === page ? "bg-accent text-on-accent" : "border border-line"}`} href={hrefFor(number)} aria-current={number === page ? "page" : undefined}>{number}</a>
             </span>
           );
         })}
-        {page >= pages ? <span className="inline-flex min-h-11 items-center rounded-full border border-white/10 px-4 text-sm opacity-50">Next</span> : <a className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-4 text-sm" href={hrefFor(page + 1)}>Next</a>}
+        {page >= pages ? <span className="inline-flex min-h-11 items-center rounded-full border border-line px-4 text-sm opacity-50">Next</span> : <a className="inline-flex min-h-11 items-center rounded-full border border-line bg-surface px-4 text-sm" href={hrefFor(page + 1)}>Next</a>}
       </div>
     </nav>
   );
@@ -200,7 +200,7 @@ export function ExpenseSheet(props: {
         </div>
       </Dialog>
       {toast ? (
-        <div className="fixed bottom-24 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-white/10 bg-[#0c1214] px-4 py-2 text-sm md:bottom-8">
+        <div className="fixed bottom-24 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-line bg-elevated px-4 py-2 text-sm md:bottom-8">
           Deleted {toast.label}
           <button className="min-h-11 text-accent" onClick={async () => { await restoreExpenseAction(toast.id); setToast(null); router.refresh(); }}>Undo</button>
         </div>
@@ -290,7 +290,7 @@ function ExpenseEditor(props: {
           {props.categories.map((category) => (
             <label key={category.id} className="min-h-11">
               <input className="peer sr-only" type="radio" name="category" value={category.name} defaultChecked={expense ? expense.category === category.name : category.name === "Other"} />
-              <span className="inline-flex min-h-11 items-center rounded-full border border-white/10 px-3 text-sm peer-checked:border-transparent peer-checked:bg-accent peer-checked:text-on-accent">{category.name}</span>
+              <span className="inline-flex min-h-11 items-center rounded-full border border-line px-3 text-sm peer-checked:border-transparent peer-checked:bg-accent peer-checked:text-on-accent">{category.name}</span>
             </label>
           ))}
         </div>
@@ -324,7 +324,7 @@ function ReceiptPreview({ id, contentType }: { id: string; contentType?: string 
   const [failed, setFailed] = useState(false);
   const pdf = contentType === "application/pdf" || failed;
   return (
-    <a href={`/api/receipts/${id}`} target="_blank" rel="noreferrer" className="flex size-20 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/5 text-xs" title="Open receipt in a new tab">
+    <a href={`/api/receipts/${id}`} target="_blank" rel="noreferrer" className="flex size-20 items-center justify-center overflow-hidden rounded-2xl border border-line bg-surface text-xs" title="Open receipt in a new tab">
       {pdf ? <span>PDF</span> : <img src={`/api/receipts/${id}`} alt="Receipt preview" className="size-full object-cover" onError={() => setFailed(true)} />}
     </a>
   );

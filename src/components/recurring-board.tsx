@@ -79,7 +79,7 @@ export function RecurringBoard({ items, currency, monthlyCents, yearlyCents, cat
         <Button onClick={() => setOpen("new")}>Add recurring</Button>
       </div>
       {rows.length === 0 ? <EmptyState title="Nothing recurring yet." body="Netflix, rent, and the electric bill can post themselves." action={<Button onClick={() => setOpen("new")}>Add recurring</Button>} /> : (
-        <ul className="divide-y divide-white/5">
+        <ul className="divide-y divide-line">
           {rows.map((item) => (
             <li key={item.id}>
               <button className="flex min-h-14 w-full items-center gap-3 py-3 text-left" onClick={() => setOpen(item)}>
@@ -276,7 +276,7 @@ function HistoryPanel({ item, page, onPage }: { item: Item; page: number; onPage
       <p className="text-sm text-muted">{item.status === "ENDED" ? "Ended" : "Active"} · {frequencyLabel(item.frequency)}{item.amountType === "VARIABLE" ? " · Amount changes" : ""} · Newest first</p>
       <p className="mt-1">Since {prettyDate(started)} · {months} {months === 1 ? "month" : "months"}</p>
       <p className="text-sm text-muted">Last charge {prettyDate(last.effectiveFrom)} · {last.amountFormatted}</p>
-      <ul className="mt-4 divide-y divide-white/5">
+      <ul className="mt-4 divide-y divide-line">
         {window.rows.map((period) => (
           <li key={period.from} className="flex items-center justify-between gap-3 py-3">
             <span>
@@ -304,8 +304,8 @@ function ChargesPanel({ item, page, onPage }: { item: Item; page: number; onPage
         {window.rows.map((rate) => (
           <li key={rate.id} className="flex items-center gap-3 text-sm">
             <span className="w-28 shrink-0 text-muted">{prettyDate(rate.effectiveFrom)}</span>
-            <span className="h-2 min-w-0 flex-1 rounded-full bg-white/10">
-              <span className="block h-2 rounded-full bg-white/70" style={{ width: `${Math.max(8, Math.round((rate.amountCents / max) * 100))}%` }} />
+            <span className="h-2 min-w-0 flex-1 rounded-full bg-surface-strong">
+              <span className="block h-2 rounded-full bg-ink/70" style={{ width: `${Math.max(8, Math.round((rate.amountCents / max) * 100))}%` }} />
             </span>
             <span className="w-24 shrink-0 text-right tabular">{rate.amountFormatted}</span>
           </li>

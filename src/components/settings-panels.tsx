@@ -33,7 +33,7 @@ export function ConnectionsPanel({ keys, connectMessage }: { keys: { id: string;
       </Panel>
       <ul className="space-y-2">
         {keys.map((key) => (
-          <li key={key.id} className="flex flex-wrap items-center justify-between gap-2 rounded-3xl border border-white/10 px-3 py-2 text-sm">
+          <li key={key.id} className="flex flex-wrap items-center justify-between gap-2 rounded-3xl border border-line px-3 py-2 text-sm">
             <span>{key.name} · {key.prefix}… · {key.revokedAt ? "revoked" : key.lastUsedAt ? `last used ${key.lastUsedAt}` : "never used"}</span>
             {key.revokedAt
               ? <Button variant="danger" onClick={() => setRemoving(key)}>Delete</Button>
