@@ -37,8 +37,6 @@ export function ExpensesBoard(props: {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [editing, setEditing] = useState<ExpenseDTO | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-  const [toast, setToast] = useState<{ id: string; label: string } | null>(null);
-  const [confirm, setConfirm] = useState<ExpenseDTO | null>(null);
   const groups = useMemo(() => {
     const map = new Map<string, ExpenseDTO[]>();
     for (const expense of props.expenses) map.set(expense.occurredOn, [...(map.get(expense.occurredOn) ?? []), expense]);
@@ -54,16 +52,6 @@ export function ExpensesBoard(props: {
       if (value && key !== "new") params.set(key, value);
     }
     router.push(`/expenses?${params.toString()}`);
-  }
-
-  async function onDelete(expense: ExpenseDTO) {
-    const result = await deleteExpenseAction(expense.id);
-    if (result.ok) {
-      setConfirm(null);
-      setOpen(false);
-      setToast({ id: expense.id, label: expense.merchant || expense.description });
-      router.refresh();
-    }
   }
 
   return (
@@ -133,20 +121,8 @@ export function ExpensesBoard(props: {
         <a className="inline-flex min-h-11 items-center text-sm text-accent" href={`/api/export/expenses?${new URLSearchParams(Object.entries(props.query).filter((entry): entry is [string, string] => Boolean(entry[1] && entry[0] !== "new" && entry[0] !== "page")))}`}>Export CSV</a>
         <ExpensePager page={props.page} pageSize={props.pageSize} total={props.total} hrefFor={(page) => pageHref(props.query, page)} />
       </div>
-      <ExpenseEditor key={editing?.id ?? "new"} open={open} expense={editing} onOpenChange={setOpen} {...props} onDelete={setConfirm} />
+      <ExpenseSheet open={open} expense={editing} onOpenChange={setOpen} categories={props.categories} methods={props.methods} entities={props.entities} merchants={props.merchants} currency={props.currency} largeAmountCents={props.largeAmountCents} />
       <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} query={props.query} push={push} categories={props.categories} methods={props.methods} entities={props.entities} />
-      <Dialog open={Boolean(confirm)} onOpenChange={() => setConfirm(null)} title="Delete this expense?" description={confirm ? `${confirm.merchant || confirm.description} · ${confirm.amountFormatted}` : ""}>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => setConfirm(null)}>Keep it</Button>
-          <Button variant="danger" onClick={() => confirm && onDelete(confirm)}>Delete</Button>
-        </div>
-      </Dialog>
-      {toast ? (
-        <div className="fixed bottom-24 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-white/10 bg-[#0c1214] px-4 py-2 text-sm md:bottom-8">
-          Deleted {toast.label}
-          <button className="min-h-11 text-accent" onClick={async () => { await restoreExpenseAction(toast.id); setToast(null); router.refresh(); }}>Undo</button>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -186,6 +162,50 @@ function ExpensePager({ page, pageSize, total, hrefFor }: { page: number; pageSi
         {page >= pages ? <span className="inline-flex min-h-11 items-center rounded-full border border-white/10 px-4 text-sm opacity-50">Next</span> : <a className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-4 text-sm" href={hrefFor(page + 1)}>Next</a>}
       </div>
     </nav>
+  );
+}
+
+export function ExpenseSheet(props: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  expense: ExpenseDTO | null;
+  categories: Option[];
+  methods: Option[];
+  entities: (Option & { isDefault: boolean })[];
+  merchants: Option[];
+  currency: string;
+  largeAmountCents: number;
+}) {
+  const router = useRouter();
+  const [toast, setToast] = useState<{ id: string; label: string } | null>(null);
+  const [confirm, setConfirm] = useState<ExpenseDTO | null>(null);
+
+  async function onDelete(expense: ExpenseDTO) {
+    const result = await deleteExpenseAction(expense.id);
+    if (result.ok) {
+      setConfirm(null);
+      props.onOpenChange(false);
+      setToast({ id: expense.id, label: expense.merchant || expense.description });
+      router.refresh();
+    }
+  }
+
+  return (
+    <>
+      <ExpenseEditor key={props.expense?.id ?? "new"} open={props.open} expense={props.expense} onOpenChange={props.onOpenChange} categories={props.categories} methods={props.methods} entities={props.entities} merchants={props.merchants} currency={props.currency} largeAmountCents={props.largeAmountCents} onDelete={setConfirm} />
+      <Dialog open={Boolean(confirm)} onOpenChange={() => setConfirm(null)} title="Delete this expense?" description={confirm ? `${confirm.merchant || confirm.description} · ${confirm.amountFormatted}` : ""}>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => setConfirm(null)}>Keep it</Button>
+          <Button variant="danger" onClick={() => confirm && onDelete(confirm)}>Delete</Button>
+        </div>
+      </Dialog>
+      {toast ? (
+        <div className="fixed bottom-24 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-white/10 bg-[#0c1214] px-4 py-2 text-sm md:bottom-8">
+          Deleted {toast.label}
+          <button className="min-h-11 text-accent" onClick={async () => { await restoreExpenseAction(toast.id); setToast(null); router.refresh(); }}>Undo</button>
+        </div>
+      ) : null}
+    </>
   );
 }
 
