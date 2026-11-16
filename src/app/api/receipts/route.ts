@@ -11,7 +11,8 @@ export async function POST(request: Request) {
     const file = form.get("file");
     if (!(file instanceof File)) return Response.json({ error: { code: "validation", message: "Choose a receipt file." } }, { status: 400 });
     if (file.size > 10 * 1024 * 1024) return Response.json({ error: { code: "payload_too_large", message: "That file is over the 10 MB limit." } }, { status: 413 });
-    const receipt = await saveReceipt(session.user.id, { bytes: Buffer.from(await file.arrayBuffer()), contentType: contentTypeForUpload(file.type, file.name) });
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const receipt = await saveReceipt(session.user.id, { bytes, contentType: contentTypeForUpload(file.type, file.name, bytes) });
     return Response.json(publicReceipt(receipt));
   } catch (error) {
     if (error instanceof AppError) return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status });

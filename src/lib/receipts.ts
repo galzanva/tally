@@ -7,8 +7,8 @@ import { AppError } from "@/lib/errors";
 
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]);
 
-export function contentTypeForUpload(type: string, filename: string) {
-  const given = type === "image/jpg" ? "image/jpeg" : type;
+export function contentTypeForUpload(type: string, filename: string, bytes?: Uint8Array) {
+  const given = type === "image/jpg" || type === "image/pjpeg" ? "image/jpeg" : type === "application/x-pdf" ? "application/pdf" : type;
   if (ALLOWED.has(given)) return given;
   const name = filename.toLowerCase();
   if (name.endsWith(".png")) return "image/png";
@@ -16,6 +16,14 @@ export function contentTypeForUpload(type: string, filename: string) {
   if (name.endsWith(".heic") || name.endsWith(".heif")) return "image/heic";
   if (name.endsWith(".pdf")) return "application/pdf";
   if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+  if (bytes && bytes.length >= 5) {
+    const head = Buffer.from(bytes.subarray(0, 12));
+    const text = head.toString("latin1");
+    if (text.startsWith("%PDF")) return "application/pdf";
+    if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "image/jpeg";
+    if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return "image/png";
+    if (text.startsWith("RIFF") && head.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  }
   return given || "application/octet-stream";
 }
 
@@ -61,7 +69,7 @@ async function writeStored(userId: string, bytes: Buffer, contentType: string) {
       if (/private/i.test(message)) {
         throw new AppError(500, "server", "The Blob store is not accepting private files. In Vercel, open the Blob store and allow private access.");
       }
-      throw new AppError(500, "server", "The receipt could not be saved to Blob storage.");
+      throw new AppError(500, "server", message ? `The receipt could not be saved to Blob storage. ${message}` : "The receipt could not be saved to Blob storage.");
     }
   }
   const full = path.join(process.cwd(), ".data", "blobs", pathname);
