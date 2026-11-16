@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { trailingMonths } from "@/lib/dates";
 import { forUser } from "@/lib/db";
 import { listExpenses } from "@/lib/expenses";
-import { upcomingRecurring } from "@/lib/recurring";
+import { listRecurring, upcomingRecurring } from "@/lib/recurring";
 import { getSummary } from "@/lib/summary";
 
 function one(value: string | string[] | undefined) {
@@ -20,6 +20,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const summary = await getSummary(user.id, { period, from: one(params.from), to: one(params.to) });
   const recent = await listExpenses(user.id, { period, from: one(params.from), to: one(params.to), limit: 8, cap: 8 });
   const upcoming = await upcomingRecurring(user.id, 7);
+  const bills = await listRecurring(user.id);
   const db = forUser(user.id);
   const [insight, categories, methods, entities, merchants] = await Promise.all([
     db.insight.findFirst({ where: { kind: "MONTHLY_REVIEW", dismissedAt: null }, orderBy: { createdAt: "desc" } }),
@@ -109,6 +110,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             methods={methods.map((item) => ({ id: item.id, name: item.name }))}
             entities={entities.map((item) => ({ id: item.id, name: item.name, isDefault: item.isDefault }))}
             merchants={merchants.map((item) => ({ id: item.id, name: item.name }))}
+            bills={bills.map((item) => ({ id: item.id, name: item.name, amountFormatted: item.amountFormatted }))}
             currency={user.currency}
             largeAmountCents={user.largeAmountCents}
           />

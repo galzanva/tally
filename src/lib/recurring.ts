@@ -320,6 +320,130 @@ export async function upcomingRecurring(userId: string, days: number) {
   return items.map((item) => serializeRecurring(item, user.currency, today));
 }
 
+export async function postMissedCharge(userId: string, actor: Actor, recurringId: string, input: { date: string; amount: number | string }) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new AppError(404, "not_found", "That account doesn't exist.");
+  const db = forUser(userId);
+  const item = await db.recurringExpense.findFirst({ where: { id: recurringId } });
+  if (!item) throw new AppError(404, "not_found", "That recurring item doesn't exist.");
+  const occurredOn = input.date.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(occurredOn)) throw new AppError(400, "validation", "Pick the date the charge posted.");
+  const amountCents = parseDollarsToCents(input.amount);
+  const periodKey = periodKeyFor(item.frequency, occurredOn);
+  try {
+    const expense = await db.expense.create({
+      data: {
+        occurredOn: ymdToDate(occurredOn),
+        amountCents,
+        currency: user.currency,
+        description: item.name,
+        merchantId: item.merchantId,
+        categoryId: item.categoryId,
+        paymentMethodId: item.paymentMethodId,
+        entityId: item.entityId,
+        taxTag: item.taxTag,
+        essential: item.essential,
+        source: "WEB",
+        status: "POSTED",
+        recurringId: item.id,
+        periodKey,
+      },
+    });
+    if (occurredOn >= dateOnlyToYmd(item.nextRunOn) && item.status === "ACTIVE") {
+      const next = advanceRun(occurredOn, item.frequency, item.dayOfMonth, item.monthOfYear);
+      await db.recurringExpense.update({ where: { id: item.id }, data: { nextRunOn: ymdToDate(next) } });
+    }
+    await writeAudit(userId, { actor, action: "expense.create", targetType: "expense", targetId: expense.id, diff: { recurringId: item.id, periodKey, amountCents, missed: true } });
+    return expense.id;
+  } catch (error) {
+    if (isUniqueConflict(error)) throw new AppError(409, "conflict", "That period already has a charge on this bill.");
+    throw error;
+  }
+}
+
+export async function linkExpenseToRecurring(userId: string, actor: Actor, recurringId: string, expenseId: string) {
+  const db = forUser(userId);
+  const item = await db.recurringExpense.findFirst({ where: { id: recurringId } });
+  if (!item) throw new AppError(404, "not_found", "That recurring item doesn't exist.");
+  const expense = await db.expense.findFirst({ where: { id: expenseId } });
+  if (!expense) throw new AppError(404, "not_found", "That expense doesn't exist.");
+  const periodKey = periodKeyFor(item.frequency, dateOnlyToYmd(expense.occurredOn));
+  const taken = await db.expense.findFirst({ where: { recurringId: item.id, periodKey, NOT: { id: expense.id } } });
+  if (taken) throw new AppError(409, "conflict", "That period already has a charge on this bill.");
+  await db.expense.update({ where: { id: expense.id }, data: { recurringId: item.id, periodKey } });
+  await writeAudit(userId, { actor, action: "expense.update", targetType: "expense", targetId: expense.id, diff: { recurringId: item.id, periodKey, linked: true } });
+}
+
+export async function unlinkExpenseFromRecurring(userId: string, actor: Actor, expenseId: string) {
+  const db = forUser(userId);
+  const expense = await db.expense.findFirst({ where: { id: expenseId } });
+  if (!expense) throw new AppError(404, "not_found", "That expense doesn't exist.");
+  if (!expense.recurringId) return;
+  await db.expense.update({ where: { id: expense.id }, data: { recurringId: null, periodKey: null } });
+  await writeAudit(userId, { actor, action: "expense.update", targetType: "expense", targetId: expense.id, diff: { recurringId: null, linked: false } });
+}
+
+export async function createRecurringFromExpense(userId: string, actor: Actor, expenseId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new AppError(404, "not_found", "That account doesn't exist.");
+  const db = forUser(userId);
+  const expense = await db.expense.findFirst({ where: { id: expenseId }, include: { merchant: true, category: true, paymentMethod: true, entity: true } });
+  if (!expense) throw new AppError(404, "not_found", "That expense doesn't exist.");
+  if (expense.recurringId) throw new AppError(409, "conflict", "This expense is already on a recurring bill.");
+  const occurredOn = dateOnlyToYmd(expense.occurredOn);
+  const day = Number(occurredOn.slice(8, 10));
+  const name = (expense.merchant?.name || expense.description || "Recurring").trim().slice(0, 80);
+  const created = await createRecurring(userId, actor, {
+    name,
+    amount: (expense.amountCents / 100).toFixed(2),
+    frequency: "MONTHLY",
+    dayOfMonth: day,
+    amountType: "FIXED",
+    startOn: occurredOn,
+    category: expense.category.name,
+    merchant: expense.merchant?.name,
+    paymentMethod: expense.paymentMethod?.name,
+    entity: expense.entity.name,
+    taxTag: expense.taxTag,
+    essential: expense.essential,
+  });
+  const today = todayYmd(user.timezone);
+  let next = created.nextRunOn;
+  while (next <= today) next = advanceRun(next, "MONTHLY", day, null);
+  if (next !== created.nextRunOn) {
+    await db.recurringExpense.update({ where: { id: created.id }, data: { nextRunOn: ymdToDate(next) } });
+  }
+  await linkExpenseToRecurring(userId, actor, created.id, expense.id);
+  return { id: created.id, name: created.name, amountFormatted: created.amountFormatted, nextRunOn: next };
+}
+
+export async function searchExpensesToLink(userId: string, query: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return [];
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const db = forUser(userId);
+  const rows = await db.expense.findMany({
+    where: {
+      OR: [
+        { description: { contains: q, mode: "insensitive" } },
+        { merchant: { name: { contains: q, mode: "insensitive" } } },
+      ],
+    },
+    include: { merchant: true },
+    orderBy: { occurredOn: "desc" },
+    take: 8,
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    occurredOn: dateOnlyToYmd(row.occurredOn),
+    amountFormatted: formatMoney(row.amountCents, user.currency),
+    description: row.description,
+    merchant: row.merchant?.name ?? null,
+    recurringId: row.recurringId,
+  }));
+}
+
 export async function recurringPostings(userId: string, recurringId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return [];

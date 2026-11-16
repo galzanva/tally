@@ -6,6 +6,7 @@ import { MoneyText } from "@/components/ui";
 import type { ExpenseDTO } from "@/lib/expenses";
 
 type Option = { id: string; name: string };
+type RecurringOption = { id: string; name: string; amountFormatted: string };
 
 export function RecentExpenses(props: {
   expenses: ExpenseDTO[];
@@ -13,6 +14,7 @@ export function RecentExpenses(props: {
   methods: Option[];
   entities: (Option & { isDefault: boolean })[];
   merchants: Option[];
+  bills: RecurringOption[];
   currency: string;
   largeAmountCents: number;
 }) {
@@ -37,6 +39,7 @@ export function RecentExpenses(props: {
         methods={props.methods}
         entities={props.entities}
         merchants={props.merchants}
+        bills={props.bills}
         currency={props.currency}
         largeAmountCents={props.largeAmountCents}
       />

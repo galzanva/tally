@@ -2,6 +2,7 @@ import { ExpensesBoard } from "@/components/expenses-board";
 import { requireUser } from "@/lib/auth";
 import { forUser } from "@/lib/db";
 import { listExpenses } from "@/lib/expenses";
+import { listRecurring } from "@/lib/recurring";
 
 function one(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -27,7 +28,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     page: one(params.page),
   };
   const db = forUser(user.id);
-  const [listed, categories, methods, entities, merchants] = await Promise.all([
+  const [listed, categories, methods, entities, merchants, bills] = await Promise.all([
     listExpenses(user.id, {
       ...query,
       hasReceipt: query.hasReceipt === "true" ? true : query.hasReceipt === "false" ? false : undefined,
@@ -40,6 +41,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     db.paymentMethod.findMany({ orderBy: { name: "asc" } }),
     db.entity.findMany({ orderBy: { name: "asc" } }),
     db.merchant.findMany({ orderBy: { name: "asc" } }),
+    listRecurring(user.id),
   ]);
   return (
     <ExpensesBoard
@@ -48,6 +50,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       methods={methods.map((item) => ({ id: item.id, name: item.name }))}
       entities={entities.map((item) => ({ id: item.id, name: item.name, isDefault: item.isDefault }))}
       merchants={merchants.map((item) => ({ id: item.id, name: item.name }))}
+      bills={bills.map((item) => ({ id: item.id, name: item.name, amountFormatted: item.amountFormatted }))}
       currency={user.currency}
       query={query}
       largeAmountCents={user.largeAmountCents}
