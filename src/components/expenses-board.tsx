@@ -320,20 +320,31 @@ function ExpenseEditor(props: {
   );
 }
 
+function ReceiptPreview({ id, contentType }: { id: string; contentType?: string }) {
+  const [failed, setFailed] = useState(false);
+  const pdf = contentType === "application/pdf" || failed;
+  return (
+    <a href={`/api/receipts/${id}`} target="_blank" rel="noreferrer" className="flex size-20 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/5 text-xs" title="Open receipt in a new tab">
+      {pdf ? <span>PDF</span> : <img src={`/api/receipts/${id}`} alt="Receipt preview" className="size-full object-cover" onError={() => setFailed(true)} />}
+    </a>
+  );
+}
+
 function ReceiptField({ ids, onChange }: { ids: string[]; onChange: (ids: string[]) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [kinds, setKinds] = useState<Record<string, string>>({});
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="space-y-2">
-      <input ref={inputRef} type="file" accept="image/*,application/pdf,.heic,.heif" className="sr-only" onChange={async (event) => {
+      <input ref={inputRef} type="file" accept="image/*,application/pdf,.pdf,.heic,.heif" className="sr-only" onChange={async (event) => {
         const file = event.target.files?.[0];
         event.target.value = "";
         if (!file) return;
         setBusy(true);
         setError(null);
-        setStatus("Uploading receipt…");
+        setStatus(`Uploading ${file.name}…`);
         try {
           const body = new FormData();
           body.set("file", file);
@@ -344,8 +355,9 @@ function ReceiptField({ ids, onChange }: { ids: string[]; onChange: (ids: string
             setError(json?.error?.message ?? "The receipt didn't upload.");
             return;
           }
+          setKinds((current) => ({ ...current, [json.receiptId]: json.contentType }));
           onChange([...ids, json.receiptId]);
-          setStatus("Receipt uploaded");
+          setStatus(json.contentType === "application/pdf" ? "PDF uploaded" : "Receipt uploaded");
         } catch {
           setStatus(null);
           setError("The receipt didn't upload.");
@@ -359,11 +371,7 @@ function ReceiptField({ ids, onChange }: { ids: string[]; onChange: (ids: string
       {status ? <p className="text-sm text-muted">{status}</p> : null}
       {error ? <p className="text-sm text-warn">{error}</p> : null}
       <div className="flex flex-wrap gap-2">
-        {ids.filter(Boolean).map((id) => (
-          <a key={id} href={`/api/receipts/${id}`} target="_blank" rel="noreferrer" className="block size-20 overflow-hidden rounded-2xl border border-white/10" title="Open receipt in a new tab">
-            <img src={`/api/receipts/${id}`} alt="Receipt preview" className="size-full object-cover" />
-          </a>
-        ))}
+        {ids.filter(Boolean).map((id) => <ReceiptPreview key={id} id={id} contentType={kinds[id]} />)}
       </div>
     </div>
   );
