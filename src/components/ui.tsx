@@ -13,8 +13,8 @@ const buttonStyles = cva(
     variants: {
       variant: {
         primary: "bg-accent text-on-accent hover:brightness-110",
-        secondary: "border border-white/10 bg-white/5 text-fg hover:bg-white/10",
-        ghost: "bg-transparent text-fg hover:bg-white/5",
+        secondary: "border border-line bg-surface text-fg hover:bg-surface-strong",
+        ghost: "bg-transparent text-fg hover:bg-surface",
         danger: "bg-danger text-white",
         warn: "bg-warn text-on-accent",
       },
@@ -30,19 +30,19 @@ export function Button({ className, variant, size, asChild, ...props }: React.Bu
 }
 
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={cn("min-h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-base text-fg outline-none placeholder:text-faint", props.className)} />;
+  return <input {...props} className={cn("min-h-11 w-full rounded-2xl border border-line bg-surface px-3 text-base text-fg outline-none placeholder:text-faint", props.className)} />;
 }
 
 export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={cn("min-h-24 w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-base text-fg outline-none placeholder:text-faint", props.className)} />;
+  return <textarea {...props} className={cn("min-h-24 w-full rounded-2xl border border-line bg-surface px-3 py-3 text-base text-fg outline-none placeholder:text-faint", props.className)} />;
 }
 
 export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={cn("min-h-11 w-full rounded-2xl border border-white/10 bg-[#0c1214] px-3 text-base text-fg", props.className)} />;
+  return <select {...props} className={cn("min-h-11 w-full rounded-2xl border border-line bg-elevated px-3 text-base text-fg", props.className)} />;
 }
 
 export function Panel({ className, children }: { className?: string; children: React.ReactNode }) {
-  return <section className={cn("rounded-3xl border border-white/10 bg-panel p-4 shadow-[0_24px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl", className)}>{children}</section>;
+  return <section className={cn("rounded-3xl border border-line bg-panel p-4 shadow-[var(--shadow)] backdrop-blur-xl", className)}>{children}</section>;
 }
 
 export function Eyebrow({ children }: { children: React.ReactNode }) {
@@ -50,11 +50,11 @@ export function Eyebrow({ children }: { children: React.ReactNode }) {
 }
 
 export function Chip({ active, className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }) {
-  return <button {...props} className={cn("min-h-11 rounded-full border px-3 text-sm", active ? "border-transparent bg-accent text-on-accent" : "border-white/10 text-fg hover:bg-white/5", className)} />;
+  return <button {...props} className={cn("min-h-11 rounded-full border px-3 text-sm", active ? "border-transparent bg-accent text-on-accent" : "border-line text-fg hover:bg-surface", className)} />;
 }
 
 export function Spinner({ className }: { className?: string }) {
-  return <span className={cn("inline-block size-5 animate-spin rounded-full border-2 border-white/20 border-t-accent", className)} role="status" aria-label="Loading" />;
+  return <span className={cn("inline-block size-5 animate-spin rounded-full border-2 border-ink/20 border-t-accent", className)} role="status" aria-label="Loading" />;
 }
 
 export function EmptyState({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) {
@@ -77,7 +77,7 @@ export function Dialog({ open, onOpenChange, title, description, children }: { o
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/70" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 max-h-[min(92dvh,40rem)] w-[min(100%-2rem,32rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-3xl border border-white/10 bg-[#0c1214] p-5 focus:outline-none">
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 max-h-[min(92dvh,40rem)] w-[min(100%-2rem,32rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-3xl border border-line bg-elevated p-5 focus:outline-none">
           <DialogPrimitive.Title className="font-display text-2xl">{title}</DialogPrimitive.Title>
           {description ? <DialogPrimitive.Description className="mt-1 text-sm text-muted">{description}</DialogPrimitive.Description> : null}
           <div className="mt-4">{children}</div>
@@ -92,15 +92,15 @@ export function Sheet({ open, onOpenChange, title, children, footer }: { open: b
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/70" />
-        <DialogPrimitive.Content className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[100vw] flex-col border-l border-white/10 bg-[#0c1214] focus:outline-none sm:w-[min(32rem,100%)] md:w-[min(44rem,calc(100vw-8rem))]">
+        <DialogPrimitive.Content className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[100vw] flex-col border-l border-line bg-elevated focus:outline-none sm:w-[min(32rem,100%)] md:w-[min(44rem,calc(100vw-8rem))]">
           <div className="flex items-center justify-between px-4 py-3">
             <DialogPrimitive.Title className="font-display text-2xl">{title}</DialogPrimitive.Title>
-            <DialogPrimitive.Close className="inline-flex size-11 items-center justify-center rounded-full hover:bg-white/5" aria-label="Close">
+            <DialogPrimitive.Close className="inline-flex size-11 items-center justify-center rounded-full hover:bg-surface" aria-label="Close">
               <X className="size-5" />
             </DialogPrimitive.Close>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
-          {footer ? <div className="border-t border-white/10 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">{footer}</div> : null}
+          {footer ? <div className="border-t border-line p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">{footer}</div> : null}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

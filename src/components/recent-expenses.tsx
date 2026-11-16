@@ -19,7 +19,7 @@ export function RecentExpenses(props: {
   const [editing, setEditing] = useState<ExpenseDTO | null>(null);
   return (
     <>
-      <ul className="mt-2 divide-y divide-white/5">
+      <ul className="mt-2 divide-y divide-line">
         {props.expenses.map((expense) => (
           <li key={expense.id}>
             <button type="button" className="flex min-h-11 w-full items-center justify-between gap-3 py-3 text-left text-sm hover:text-accent" onClick={() => setEditing(expense)}>

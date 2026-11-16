@@ -17,7 +17,7 @@ export function TrendChart({ points, currency }: { points: { label: string; tota
             content={({ active, payload }) => {
               if (!active || !payload?.[0]) return null;
               const cents = Number(payload[0].value ?? 0);
-              return <div className="rounded-2xl border border-white/10 bg-[#0c1214] px-3 py-2 text-sm tabular">{formatMoney(cents, currency)}</div>;
+              return <div className="rounded-2xl border border-line bg-elevated px-3 py-2 text-sm tabular">{formatMoney(cents, currency)}</div>;
             }}
           />
           <Area type="monotone" dataKey="totalCents" stroke="oklch(0.80 0.15 165)" fill="rgba(255,255,255,0.08)" strokeWidth={2} isAnimationActive={!reduced} />

@@ -26,7 +26,7 @@ export function TaxesBoard({ year, matrix, tags, payments, missing, initialFindi
     <div className="space-y-4">
       <form className="flex items-center gap-2" action="/taxes">
         <label className="text-sm text-muted" htmlFor="year" title="The calendar year these totals cover.">Year</label>
-        <input id="year" name="year" defaultValue={year} className="min-h-11 w-28 rounded-2xl border border-white/10 bg-white/5 px-3" />
+        <input id="year" name="year" defaultValue={year} className="min-h-11 w-28 rounded-2xl border border-line bg-surface px-3" />
         <Button type="submit" variant="secondary">Show</Button>
       </form>
       <Panel className="overflow-x-auto">
@@ -34,7 +34,7 @@ export function TaxesBoard({ year, matrix, tags, payments, missing, initialFindi
           <thead><tr><th className="py-2 pr-3">Entity</th>{tags.map((tag) => <th key={tag} className="px-2 py-2 font-normal text-muted">{tag}</th>)}</tr></thead>
           <tbody>
             {matrix.map((row) => (
-              <tr key={row.entity} className="border-t border-white/5">
+              <tr key={row.entity} className="border-t border-line">
                 <th className="py-2 pr-3 font-medium">{row.entity}</th>
                 {row.cells.map((cell) => <td key={cell.taxTag} className="px-2 py-2 tabular">{cell.totalFormatted}</td>)}
               </tr>
@@ -94,7 +94,7 @@ export function TaxesBoard({ year, matrix, tags, payments, missing, initialFindi
         filterOf={(row) => row.suggestedTaxTag ?? row.suggestedEntity ?? "No suggestion"}
         empty="Nothing to review for this year."
         render={(finding) => (
-          <li key={`${finding.expenseId}-${finding.reason}`} className="border-t border-white/5 py-3 text-sm">
+          <li key={`${finding.expenseId}-${finding.reason}`} className="border-t border-line py-3 text-sm">
             <p>{finding.occurredOn} {finding.merchant} {finding.amountFormatted}. {finding.reason}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {finding.suggestedTaxTag ? <Button variant="secondary" onClick={() => applyTaxAction(finding.expenseId, { taxTag: finding.suggestedTaxTag as TaxFinding["suggestedTaxTag"] as never })}>Apply {finding.suggestedTaxTag}</Button> : null}
@@ -177,7 +177,7 @@ function RecordList<T>({ title, rows, searchOf, dateOf, amountOf, nameOf, filter
       </div>
       {sorted.length === 0 ? <p className="mt-4 text-sm text-muted">{rows.length === 0 ? empty : "Nothing matches."}</p> : (
         <>
-          <ul className="mt-2 divide-y divide-white/5">{visible.map((row) => render(row))}</ul>
+          <ul className="mt-2 divide-y divide-line">{visible.map((row) => render(row))}</ul>
           {pages > 1 ? (
             <nav className="mt-3 flex items-center justify-between gap-3" aria-label={`${title} pages`}>
               <p className="text-sm text-muted tabular">{start}–{end} of {sorted.length}</p>

@@ -27,7 +27,7 @@ export function InsightsBoard({ reviews }: { reviews: { id: string; title: strin
       {message ? <p className="text-sm text-muted">{message}</p> : null}
       <Panel className="space-y-3">
         <h2 className="font-display text-2xl">Ask</h2>
-        <div className="flex flex-wrap gap-2">{prompts.map((prompt) => <button key={prompt} className="min-h-11 rounded-full border border-white/10 px-3 text-left text-sm" onClick={() => setQuestion(prompt)}>{prompt}</button>)}</div>
+        <div className="flex flex-wrap gap-2">{prompts.map((prompt) => <button key={prompt} className="min-h-11 rounded-full border border-line px-3 text-left text-sm" onClick={() => setQuestion(prompt)}>{prompt}</button>)}</div>
         <Textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about a period" />
         <Button onClick={async () => { const result = await askAction(question); if (!result.ok) setAnswer(result.message); else setAnswer(result.answer); }}>Ask</Button>
         {answer ? <p className="text-sm leading-6">{answer}</p> : null}

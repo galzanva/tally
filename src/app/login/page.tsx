@@ -2,13 +2,14 @@
 
 import { useActionState } from "react";
 import { loginAction } from "@/app/actions";
-import { BackgroundGlows } from "@/components/shell";
+import { BackgroundGlows, ThemeToggle } from "@/components/shell";
 import { Button, Input, Panel } from "@/components/ui";
 
 export default function LoginPage() {
   const [state, action, pending] = useActionState(loginAction, undefined);
   return (
     <main className="relative flex min-h-dvh items-center justify-center px-4">
+      <div className="absolute right-4 top-4"><ThemeToggle /></div>
       <BackgroundGlows />
       <Panel className="w-full max-w-md">
         <p className="font-display text-4xl">Tally</p>
