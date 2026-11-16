@@ -9,7 +9,7 @@ import { askQuestion, generateMonthlyReview } from "@/lib/ai";
 import { bulkPatchExpenses, createExpense, restoreExpense, softDeleteExpense, updateExpense, type ExpenseWrite } from "@/lib/expenses";
 import { importWorkbook } from "@/lib/import/xlsx";
 import { createManualKey, createPairingCode, deleteRevokedKey, revokeKey } from "@/lib/keys";
-import { addRate, createRecurring, deleteRecurring, endRecurring, pauseRecurring, resumeRecurring, updateRecurring } from "@/lib/recurring";
+import { addRate, createRecurring, createRecurringFromExpense, deleteRecurring, endRecurring, linkExpenseToRecurring, pauseRecurring, postMissedCharge, resumeRecurring, searchExpensesToLink, unlinkExpenseFromRecurring, updateRecurring } from "@/lib/recurring";
 import { runTaxReview } from "@/lib/tax";
 import { forUser, isUniqueConflict } from "@/lib/db";
 import { parseDollarsToCents } from "@/lib/money";
@@ -111,6 +111,67 @@ export async function deleteRecurringAction(id: string) {
     await deleteRecurring(user.id, "WEB", id);
     revalidatePath("/recurring");
     return { ok: true as const };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function postMissedChargeAction(id: string, date: string, amount: string) {
+  const { user } = await requireUser();
+  try {
+    await postMissedCharge(user.id, "WEB", id, { date, amount });
+    revalidatePath("/recurring");
+    revalidatePath("/expenses");
+    revalidatePath("/");
+    return { ok: true as const };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function linkExpenseToRecurringAction(id: string, expenseId: string) {
+  const { user } = await requireUser();
+  try {
+    await linkExpenseToRecurring(user.id, "WEB", id, expenseId);
+    revalidatePath("/recurring");
+    revalidatePath("/expenses");
+    return { ok: true as const };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function setExpenseRecurringAction(expenseId: string, recurringId: string) {
+  const { user } = await requireUser();
+  try {
+    if (recurringId) await linkExpenseToRecurring(user.id, "WEB", recurringId, expenseId);
+    else await unlinkExpenseFromRecurring(user.id, "WEB", expenseId);
+    revalidatePath("/recurring");
+    revalidatePath("/expenses");
+    revalidatePath("/");
+    return { ok: true as const };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function makeRecurringFromExpenseAction(expenseId: string) {
+  const { user } = await requireUser();
+  try {
+    const bill = await createRecurringFromExpense(user.id, "WEB", expenseId);
+    revalidatePath("/recurring");
+    revalidatePath("/expenses");
+    revalidatePath("/");
+    return { ok: true as const, ...bill };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function searchExpensesToLinkAction(query: string) {
+  const { user } = await requireUser();
+  try {
+    return { ok: true as const, expenses: await searchExpensesToLink(user.id, query) };
   } catch (error) {
     return fail(error);
   }

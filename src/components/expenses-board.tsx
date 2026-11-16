@@ -3,12 +3,13 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Search, SlidersHorizontal } from "lucide-react";
-import { bulkExpenseAction, deleteExpenseAction, restoreExpenseAction, saveExpenseAction } from "@/app/actions";
+import { bulkExpenseAction, deleteExpenseAction, makeRecurringFromExpenseAction, restoreExpenseAction, saveExpenseAction, setExpenseRecurringAction } from "@/app/actions";
 import { Button, Chip, Dialog, EmptyState, Input, MoneyText, Panel, Select, Sheet, Textarea } from "@/components/ui";
 import type { ExpenseDTO, ExpenseWrite } from "@/lib/expenses";
 import { formatWeekday } from "@/lib/dates";
 
 type Option = { id: string; name: string };
+type RecurringOption = { id: string; name: string; amountFormatted: string };
 const periods = [
   ["this_month", "This month"],
   ["last_month", "Last month"],
@@ -25,6 +26,7 @@ export function ExpensesBoard(props: {
   methods: Option[];
   entities: (Option & { isDefault: boolean })[];
   merchants: Option[];
+  bills: RecurringOption[];
   currency: string;
   query: Record<string, string | undefined>;
   largeAmountCents: number;
@@ -121,7 +123,7 @@ export function ExpensesBoard(props: {
         <a className="inline-flex min-h-11 items-center text-sm text-accent" href={`/api/export/expenses?${new URLSearchParams(Object.entries(props.query).filter((entry): entry is [string, string] => Boolean(entry[1] && entry[0] !== "new" && entry[0] !== "page")))}`}>Export CSV</a>
         <ExpensePager page={props.page} pageSize={props.pageSize} total={props.total} hrefFor={(page) => pageHref(props.query, page)} />
       </div>
-      <ExpenseSheet open={open} expense={editing} onOpenChange={setOpen} categories={props.categories} methods={props.methods} entities={props.entities} merchants={props.merchants} currency={props.currency} largeAmountCents={props.largeAmountCents} />
+      <ExpenseSheet open={open} expense={editing} onOpenChange={setOpen} categories={props.categories} methods={props.methods} entities={props.entities} merchants={props.merchants} bills={props.bills} currency={props.currency} largeAmountCents={props.largeAmountCents} />
       <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} query={props.query} push={push} categories={props.categories} methods={props.methods} entities={props.entities} />
     </div>
   );
@@ -173,6 +175,7 @@ export function ExpenseSheet(props: {
   methods: Option[];
   entities: (Option & { isDefault: boolean })[];
   merchants: Option[];
+  bills: RecurringOption[];
   currency: string;
   largeAmountCents: number;
 }) {
@@ -192,7 +195,7 @@ export function ExpenseSheet(props: {
 
   return (
     <>
-      <ExpenseEditor key={props.expense?.id ?? "new"} open={props.open} expense={props.expense} onOpenChange={props.onOpenChange} categories={props.categories} methods={props.methods} entities={props.entities} merchants={props.merchants} currency={props.currency} largeAmountCents={props.largeAmountCents} onDelete={setConfirm} />
+      <ExpenseEditor key={props.expense?.id ?? "new"} open={props.open} expense={props.expense} onOpenChange={props.onOpenChange} categories={props.categories} methods={props.methods} entities={props.entities} merchants={props.merchants} bills={props.bills} currency={props.currency} largeAmountCents={props.largeAmountCents} onDelete={setConfirm} />
       <Dialog open={Boolean(confirm)} onOpenChange={() => setConfirm(null)} title="Delete this expense?" description={confirm ? `${confirm.merchant || confirm.description} · ${confirm.amountFormatted}` : ""}>
         <div className="flex gap-2">
           <Button variant="secondary" onClick={() => setConfirm(null)}>Keep it</Button>
@@ -217,6 +220,7 @@ function ExpenseEditor(props: {
   methods: Option[];
   entities: (Option & { isDefault: boolean })[];
   merchants: Option[];
+  bills: RecurringOption[];
   currency: string;
   largeAmountCents: number;
   onDelete: (expense: ExpenseDTO) => void;
@@ -228,16 +232,19 @@ function ExpenseEditor(props: {
   const [receiptIds, setReceiptIds] = useState<string[]>(expense?.receiptIds ?? []);
   const [confirmLarge, setConfirmLarge] = useState(false);
   const [essential, setEssential] = useState(expense?.essential === true);
+  const [billId, setBillId] = useState(expense?.recurringId ?? "");
+  const [addedBills, setAddedBills] = useState<RecurringOption[]>([]);
+  const bills = [...props.bills, ...addedBills.filter((bill) => !props.bills.some((existing) => existing.id === bill.id))];
   const changedAmount = expense?.recurringId && amount && Math.round(Number(amount) * 100) !== expense.amountCents;
 
-  async function submit(applyAsNewRate?: boolean) {
+  async function persist(applyAsNewRate?: boolean) {
     const form = document.getElementById("expense-form") as HTMLFormElement;
     const data = new FormData(form);
     const dollars = Number(String(data.get("amount")));
     if (Math.abs(Math.round(dollars * 100)) >= props.largeAmountCents && !confirmLarge) {
       setMessage(`This is at or above your confirmation line. Confirm it to save.`);
       setConfirmLarge(true);
-      return;
+      return null;
     }
     const result = await saveExpenseAction({
       id: expense?.id,
@@ -258,9 +265,43 @@ function ExpenseEditor(props: {
     if (!result.ok) {
       setMessage(result.message);
       if (result.code === "confirm_large_amount") setConfirmLarge(true);
+      return null;
+    }
+    return result.expense.id;
+  }
+
+  async function submit(applyAsNewRate?: boolean) {
+    const id = await persist(applyAsNewRate);
+    if (!id) return;
+    props.onOpenChange(false);
+    router.refresh();
+  }
+
+  async function saveLink() {
+    const id = await persist(false);
+    if (!id) return;
+    const result = await setExpenseRecurringAction(id, billId);
+    if (!result.ok) {
+      setMessage(result.message);
       return;
     }
-    props.onOpenChange(false);
+    setMessage(billId ? "Linked to that recurring bill." : "Removed from the recurring bill.");
+    if (!expense?.id) props.onOpenChange(false);
+    router.refresh();
+  }
+
+  async function makeRecurring() {
+    const id = await persist(false);
+    if (!id) return;
+    const result = await makeRecurringFromExpenseAction(id);
+    if (!result.ok) {
+      setMessage(result.message);
+      return;
+    }
+    setAddedBills((rows) => [...rows, { id: result.id, name: result.name, amountFormatted: result.amountFormatted }]);
+    setBillId(result.id);
+    setMessage(`Monthly bill ${result.name} starts from this charge. Next one is ${result.nextRunOn}.`);
+    if (!expense?.id) props.onOpenChange(false);
     router.refresh();
   }
 
@@ -286,14 +327,11 @@ function ExpenseEditor(props: {
           <datalist id="merchants">{props.merchants.map((merchant) => <option key={merchant.id} value={merchant.name} />)}</datalist>
         </label>
         <label className="block"><span className="text-sm text-muted">Description</span><Input name="description" defaultValue={expense?.description ?? ""} /></label>
-        <div className="flex flex-wrap gap-2">
-          {props.categories.map((category) => (
-            <label key={category.id} className="min-h-11">
-              <input className="peer sr-only" type="radio" name="category" value={category.name} defaultChecked={expense ? expense.category === category.name : category.name === "Other"} />
-              <span className="inline-flex min-h-11 items-center rounded-full border border-line px-3 text-sm peer-checked:border-transparent peer-checked:bg-accent peer-checked:text-on-accent">{category.name}</span>
-            </label>
-          ))}
-        </div>
+        <label className="block"><span className="text-sm text-muted">Category</span>
+          <Select name="category" defaultValue={expense?.category ?? props.categories.find((category) => category.name === "Other")?.name ?? props.categories[0]?.name ?? ""}>
+            {props.categories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}
+          </Select>
+        </label>
         <label className="block"><span className="text-sm text-muted">Payment method</span>
           <Select name="paymentMethod" defaultValue={expense?.paymentMethod ?? ""}>
             <option value="">None</option>
@@ -313,6 +351,19 @@ function ExpenseEditor(props: {
           <Select name="taxTag" defaultValue={expense?.taxTag ?? "UNREVIEWED"}>{tags.map((tag) => <option key={tag}>{tag}</option>)}</Select>
         </label>
         <label className="block"><span className="text-sm text-muted">Notes</span><Textarea name="notes" defaultValue={expense?.notes ?? ""} /></label>
+        <div className="space-y-2 rounded-2xl border border-line p-3">
+          <p className="text-sm">Recurring</p>
+          <p className="text-xs text-muted">Link this charge to a bill you already have, or make a monthly bill from it. The day of the month comes from this date.</p>
+          <Select value={billId} onChange={(event) => setBillId(event.target.value)} aria-label="Recurring bill">
+            <option value="">Not linked</option>
+            {bills.map((bill) => <option key={bill.id} value={bill.id}>{bill.name} · {bill.amountFormatted}</option>)}
+          </Select>
+          <div className="flex flex-wrap gap-2">
+            {billId ? <Button type="button" variant="secondary" onClick={saveLink}>Link to bill</Button> : null}
+            {!billId && expense?.recurringId ? <Button type="button" variant="secondary" onClick={saveLink}>Remove link</Button> : null}
+            <Button type="button" variant="secondary" onClick={makeRecurring} disabled={Boolean(billId)}>Make recurring</Button>
+          </div>
+        </div>
         <ReceiptField ids={receiptIds} onChange={setReceiptIds} />
         {expense ? <Button type="button" variant="danger" onClick={() => props.onDelete(expense)}>Delete</Button> : null}
       </form>
