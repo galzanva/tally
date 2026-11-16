@@ -1,7 +1,7 @@
 import { ConnectionsPanel } from "@/components/settings-panels";
 import { SettingsBack } from "@/components/settings-frame";
 import { requireUser } from "@/lib/auth";
-import { listKeys } from "@/lib/keys";
+import { existingKeyMessage, listKeys } from "@/lib/keys";
 
 export default async function ConnectionsSettingsPage() {
   const { user } = await requireUser();
@@ -9,7 +9,7 @@ export default async function ConnectionsSettingsPage() {
   return (
     <div className="space-y-4">
       <SettingsBack title="OpenClaw" body="Generate a pairing code, paste the setup message in Telegram, and the key stays out of the chat." />
-      <ConnectionsPanel keys={keys} />
+      <ConnectionsPanel keys={keys} connectMessage={existingKeyMessage()} />
     </div>
   );
 }
