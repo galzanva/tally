@@ -8,7 +8,7 @@ import { createSession, destroySession, requireUser } from "@/lib/auth";
 import { askQuestion, generateMonthlyReview } from "@/lib/ai";
 import { bulkPatchExpenses, createExpense, restoreExpense, softDeleteExpense, updateExpense, type ExpenseWrite } from "@/lib/expenses";
 import { importWorkbook } from "@/lib/import/xlsx";
-import { createManualKey, createPairingCode, revokeKey } from "@/lib/keys";
+import { createManualKey, createPairingCode, deleteRevokedKey, revokeKey } from "@/lib/keys";
 import { addRate, createRecurring, deleteRecurring, endRecurring, pauseRecurring, resumeRecurring, updateRecurring } from "@/lib/recurring";
 import { runTaxReview } from "@/lib/tax";
 import { forUser, isUniqueConflict } from "@/lib/db";
@@ -187,6 +187,12 @@ export async function manualKeyAction(formData: FormData) {
 export async function revokeKeyAction(id: string) {
   const { user } = await requireUser();
   await revokeKey(user.id, id);
+  revalidatePath("/settings", "layout");
+}
+
+export async function deleteRevokedKeyAction(id: string) {
+  const { user } = await requireUser();
+  await deleteRevokedKey(user.id, id);
   revalidatePath("/settings", "layout");
 }
 

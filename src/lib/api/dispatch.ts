@@ -8,7 +8,7 @@ import { hmacSecret } from "@/lib/keys";
 import { redeemPairingCode } from "@/lib/keys";
 import { openApiDocument, AskSchema, CreateExpenseSchema, PairSchema, PatchExpenseSchema, RateSchema, RecurringCreateSchema } from "@/lib/api/openapi";
 import { clientIp, hitRateLimit } from "@/lib/rate-limit";
-import { assertReceiptFile, publicReceipt, readStored, saveReceipt } from "@/lib/receipts";
+import { assertReceiptFile, openStored, saveReceipt } from "@/lib/receipts";
 import { addRate, createRecurring, endRecurring, listRecurring, pauseRecurring, resumeRecurring, updateRecurring } from "@/lib/recurring";
 import type { Scope } from "@/lib/seed";
 import { getSummary } from "@/lib/summary";
@@ -149,9 +149,9 @@ async function handle(method: string, request: Request, parts: string[]) {
     const db = forUser(userId);
     const receipt = await db.receipt.findFirst({ where: { id: b } });
     if (!receipt) throw new AppError(404, "not_found", "That receipt doesn't exist.");
-    const bytes = await readStored(receipt.blobPathname);
-    if (!bytes) throw new AppError(404, "not_found", "That receipt file is gone.");
-    return new Response(new Uint8Array(bytes), { headers: { "Content-Type": receipt.contentType, "Cache-Control": "private", "X-Content-Type-Options": "nosniff" } });
+    const file = await openStored(receipt.blobPathname, receipt.contentType);
+    if (!file) throw new AppError(404, "not_found", "That receipt file is gone.");
+    return file;
   }
   if (a === "summary" && method === "GET") {
     const url = new URL(request.url);

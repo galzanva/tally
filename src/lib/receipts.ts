@@ -24,26 +24,38 @@ export function assertReceiptFile(contentType: string, size: number, maxBytes: n
   }
 }
 
-async function writeStored(bytes: Buffer, contentType: string) {
+function blobToken() {
+  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
+  return token || null;
+}
+
+function receiptPath(userId: string, bytes: Buffer, contentType: string) {
   const hash = createHash("sha256").update(bytes).digest("hex");
-  const pathname = `receipts/${hash.slice(0, 16)}-${randomBytes(6).toString("hex")}.${extensionFor(contentType)}`;
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const now = new Date();
+  const year = String(now.getUTCFullYear());
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+  return `receipts/${userId}/${year}/${month}/${hash.slice(0, 16)}-${randomBytes(4).toString("hex")}.${extensionFor(contentType)}`;
+}
+
+async function writeStored(userId: string, bytes: Buffer, contentType: string) {
+  const pathname = receiptPath(userId, bytes, contentType);
+  const token = blobToken();
   if (token) {
     try {
       const blob = await put(pathname, bytes, { access: "private", token, contentType, addRandomSuffix: false });
       return blob.pathname;
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
-      if (!/private/i.test(message)) throw error;
-      const blob = await put(`${pathname}`, bytes, { access: "public", token, contentType, addRandomSuffix: true });
-      return blob.pathname;
+      if (/private/i.test(message)) {
+        throw new AppError(500, "server", "The Blob store is not accepting private files. In Vercel, open the Blob store and allow private access.");
+      }
+      throw new AppError(500, "server", "The receipt could not be saved to Blob storage.");
     }
   }
-  const relative = pathname;
-  const full = path.join(process.cwd(), ".data", "blobs", relative);
+  const full = path.join(process.cwd(), ".data", "blobs", pathname);
   await mkdir(path.dirname(full), { recursive: true });
   await writeFile(full, bytes);
-  return `local:${relative}`;
+  return `local:${pathname}`;
 }
 
 export async function readStored(pathname: string) {
@@ -54,11 +66,32 @@ export async function readStored(pathname: string) {
       return null;
     }
   }
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const token = blobToken();
   if (!token) return null;
-  const result = await get(pathname, { access: "private", token }).catch(() => get(pathname, { access: "public", token }));
+  const result = await get(pathname, { access: "private", token, useCache: false }).catch(() => get(pathname, { access: "public", token, useCache: false }));
   if (!result || result.statusCode !== 200 || !result.stream) return null;
   return Buffer.from(await new Response(result.stream).arrayBuffer());
+}
+
+function receiptHeaders(contentType: string) {
+  return {
+    "Cache-Control": "private, no-cache",
+    "Content-Type": contentType,
+    "X-Content-Type-Options": "nosniff",
+  };
+}
+
+export async function openStored(pathname: string, contentType: string) {
+  if (pathname.startsWith("local:")) {
+    const bytes = await readStored(pathname);
+    if (!bytes) return null;
+    return new Response(new Uint8Array(bytes), { headers: receiptHeaders(contentType) });
+  }
+  const token = blobToken();
+  if (!token) return null;
+  const result = await get(pathname, { access: "private", token, useCache: false }).catch(() => get(pathname, { access: "public", token, useCache: false }));
+  if (!result || result.statusCode !== 200 || !result.stream) return null;
+  return new Response(result.stream, { headers: receiptHeaders(result.blob.contentType || contentType) });
 }
 
 export async function removeStored(pathname: string) {
@@ -66,7 +99,7 @@ export async function removeStored(pathname: string) {
     await unlink(path.join(process.cwd(), ".data", "blobs", pathname.slice("local:".length))).catch(() => undefined);
     return;
   }
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const token = blobToken();
   if (!token) return;
   await del(pathname, { token }).catch(() => undefined);
 }
@@ -82,7 +115,7 @@ export async function saveReceipt(userId: string, input: { bytes: Buffer; conten
     }
     return existing;
   }
-  const blobPathname = await writeStored(input.bytes, input.contentType);
+  const blobPathname = await writeStored(userId, input.bytes, input.contentType);
   try {
     return await db.receipt.create({
       data: {

@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { writeAudit } from "@/lib/audit";
 import { forUser, prisma } from "@/lib/db";
 import { AppError } from "@/lib/errors";
 import { hitRateLimit } from "@/lib/rate-limit";
@@ -73,15 +74,14 @@ export async function createPairingCode(userId: string, scopes: string[]) {
   return { code, expiresAt, scopes: chosen, message: setupMessage(code, expiresAt, user.timezone) };
 }
 
-export function setupMessage(code: string, expiresAt: Date, timeZone: string) {
-  const base = process.env.APP_URL?.replace(/\/$/, "") || "http://localhost:3000";
-  const expires = formatInZone(expiresAt, "MMM d, yyyy, h:mm a", timeZone);
-  return `Connect to my Tally expense app. Do these steps now:
+export function appBaseUrl() {
+  return process.env.APP_URL?.replace(/\/$/, "") || "http://localhost:3000";
+}
 
-1. POST ${base}/api/v1/pair with JSON {"code":"${code}","client":"OpenClaw"}. The code expires at ${expires}.
-2. Save the returned apiKey and baseUrl yourself to a private file in your own config folder (e.g. ~/.openclaw/secrets/tally.json, permissions 600). Read the key from that file whenever you call Tally. Never put the key in this chat, in the skill text, in memory notes, or in logs.
-3. Fetch ${base}/api/v1/openapi.json and save these rules as a permanent skill called "tally-expenses" (the skill says where the key file is, but does not contain the key):
+function skillRules(base: string) {
+  return `Fetch ${base}/api/v1/openapi.json and save these rules as a permanent skill called "tally-expenses" (the skill says where the key file is, but does not contain the key):
    - When I mention paying for something, a bill, or send a receipt photo: log an expense.
+   - Every request uses Authorization: Bearer and the apiKey from ~/.openclaw/secrets/tally.json.
    - Every POST gets an Idempotency-Key header (a new UUID per Telegram message; reuse it on retries).
    - Receipt photo: POST /api/v1/receipts first, then POST /api/v1/expenses with receiptIds.
    - amount in dollars; date YYYY-MM-DD in my timezone; omit date for today.
@@ -90,7 +90,26 @@ export function setupMessage(code: string, expiresAt: Date, timeZone: string) {
    - If you get confirm_large_amount, ask me before resending with confirmLarge:true.
    - Spending questions: use GET /api/v1/summary or /api/v1/expenses and quote amountFormatted. Open-ended questions: POST /api/v1/ask.
    - Delete only when I say "delete", after naming the exact item back to me.
-4. Call GET /api/v1/me and reply "Connected to Tally as {email}".`;
+Call GET ${base}/api/v1/me and reply "Connected to Tally as {email}".`;
+}
+
+export function setupMessage(code: string, expiresAt: Date, timeZone: string) {
+  const base = appBaseUrl();
+  const expires = formatInZone(expiresAt, "MMM d, yyyy, h:mm a", timeZone);
+  return `Connect to my Tally expense app. Do these steps now:
+
+1. POST ${base}/api/v1/pair with JSON {"code":"${code}","client":"OpenClaw"}. The code expires at ${expires}.
+2. Save the returned apiKey and baseUrl yourself to a private file in your own config folder (e.g. ~/.openclaw/secrets/tally.json, permissions 600). Read the key from that file whenever you call Tally. Never put the key in this chat, in the skill text, in memory notes, or in logs.
+3. ${skillRules(base)}`;
+}
+
+export function existingKeyMessage(base = appBaseUrl()) {
+  const root = base.replace(/\/$/, "");
+  return `Connect to my Tally expense app. The API key already exists. Do these steps now:
+
+1. Read baseUrl and apiKey from ~/.openclaw/secrets/tally.json. baseUrl is ${root}. If that file is missing, stop and ask me to create it on this machine with permissions 600. Never put the key in this chat, in the skill text, in memory notes, or in logs.
+2. Send every Tally request to ${root} with header Authorization: Bearer and the apiKey from that file.
+3. ${skillRules(root)}`;
 }
 
 export async function redeemPairingCode(code: string, client: string, ip: string) {
@@ -118,7 +137,7 @@ export async function redeemPairingCode(code: string, client: string, ip: string
       data: { userId: match.userId, name: client.trim() || "OpenClaw", prefix: generated.prefix, hash: generated.hash, scopes: match.scopes },
     }),
   ]);
-  const baseUrl = process.env.APP_URL?.replace(/\/$/, "") || "http://localhost:3000";
+  const baseUrl = appBaseUrl();
   return { apiKey: generated.key, baseUrl, scopes: match.scopes, email: match.user.email };
 }
 
@@ -135,6 +154,15 @@ export async function revokeKey(userId: string, id: string) {
   const key = await db.apiKey.findFirst({ where: { id } });
   if (!key) throw new AppError(404, "not_found", "That key doesn't exist.");
   await db.apiKey.update({ where: { id }, data: { revokedAt: new Date() } });
+}
+
+export async function deleteRevokedKey(userId: string, id: string) {
+  const db = forUser(userId);
+  const key = await db.apiKey.findFirst({ where: { id } });
+  if (!key) throw new AppError(404, "not_found", "That key doesn't exist.");
+  if (!key.revokedAt) throw new AppError(400, "validation", "Revoke the key before deleting it.");
+  await writeAudit(userId, { actor: "WEB", action: "apikey.delete", targetType: "apiKey", targetId: id, diff: { name: key.name, prefix: key.prefix } });
+  await db.apiKey.delete({ where: { id } });
 }
 
 export async function listKeys(userId: string) {
