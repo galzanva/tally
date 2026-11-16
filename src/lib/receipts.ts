@@ -7,6 +7,18 @@ import { AppError } from "@/lib/errors";
 
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]);
 
+export function contentTypeForUpload(type: string, filename: string) {
+  const given = type === "image/jpg" ? "image/jpeg" : type;
+  if (ALLOWED.has(given)) return given;
+  const name = filename.toLowerCase();
+  if (name.endsWith(".png")) return "image/png";
+  if (name.endsWith(".webp")) return "image/webp";
+  if (name.endsWith(".heic") || name.endsWith(".heif")) return "image/heic";
+  if (name.endsWith(".pdf")) return "application/pdf";
+  if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+  return given || "application/octet-stream";
+}
+
 export function extensionFor(contentType: string) {
   if (contentType === "image/png") return "png";
   if (contentType === "image/webp") return "webp";

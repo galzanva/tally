@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Search, SlidersHorizontal } from "lucide-react";
 import { bulkExpenseAction, deleteExpenseAction, restoreExpenseAction, saveExpenseAction } from "@/app/actions";
@@ -322,24 +322,48 @@ function ExpenseEditor(props: {
 
 function ReceiptField({ ids, onChange }: { ids: string[]; onChange: (ids: string[]) => void }) {
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="space-y-2">
-      <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm">
-        <Camera className="size-4" /> Add receipt
-        <input type="file" accept="image/*,application/pdf" capture="environment" className="sr-only" onChange={async (event) => {
-          const file = event.target.files?.[0];
-          if (!file) return;
+      <input ref={inputRef} type="file" accept="image/*,application/pdf,.heic,.heif" className="sr-only" onChange={async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+        setBusy(true);
+        setError(null);
+        setStatus("Uploading receipt…");
+        try {
           const body = new FormData();
           body.set("file", file);
           const response = await fetch("/api/receipts", { method: "POST", body });
-          const json = await response.json();
-          if (!response.ok) setError(json.error?.message ?? "The receipt didn't upload.");
-          else onChange([...ids, json.receiptId]);
-        }} />
-      </label>
+          const json = await response.json().catch(() => null);
+          if (!response.ok || !json?.receiptId) {
+            setStatus(null);
+            setError(json?.error?.message ?? "The receipt didn't upload.");
+            return;
+          }
+          onChange([...ids, json.receiptId]);
+          setStatus("Receipt uploaded");
+        } catch {
+          setStatus(null);
+          setError("The receipt didn't upload.");
+        } finally {
+          setBusy(false);
+        }
+      }} />
+      <Button type="button" variant="secondary" disabled={busy} onClick={() => inputRef.current?.click()}>
+        <Camera className="size-4" /> {busy ? "Uploading…" : "Add receipt"}
+      </Button>
+      {status ? <p className="text-sm text-muted">{status}</p> : null}
       {error ? <p className="text-sm text-warn">{error}</p> : null}
       <div className="flex flex-wrap gap-2">
-        {ids.map((id) => <a key={id} href={`/api/receipts/${id}`} target="_blank" className="block size-16 overflow-hidden rounded-2xl border border-white/10"><img src={`/api/receipts/${id}`} alt="Receipt" className="size-full object-cover" /></a>)}
+        {ids.filter(Boolean).map((id) => (
+          <a key={id} href={`/api/receipts/${id}`} target="_blank" rel="noreferrer" className="block size-20 overflow-hidden rounded-2xl border border-white/10" title="Open receipt in a new tab">
+            <img src={`/api/receipts/${id}`} alt="Receipt preview" className="size-full object-cover" />
+          </a>
+        ))}
       </div>
     </div>
   );

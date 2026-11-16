@@ -1,16 +1,23 @@
 import { getSession } from "@/lib/auth";
 import { forUser } from "@/lib/db";
-import { openStored, publicReceipt, saveReceipt } from "@/lib/receipts";
+import { AppError } from "@/lib/errors";
+import { contentTypeForUpload, openStored, publicReceipt, saveReceipt } from "@/lib/receipts";
 
 export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return Response.json({ error: { code: "unauthorized", message: "Sign in first." } }, { status: 401 });
-  const form = await request.formData();
-  const file = form.get("file");
-  if (!(file instanceof File)) return Response.json({ error: { code: "validation", message: "Choose a receipt file." } }, { status: 400 });
-  if (file.size > 10 * 1024 * 1024) return Response.json({ error: { code: "payload_too_large", message: "That file is over the 10 MB limit." } }, { status: 413 });
-  const receipt = await saveReceipt(session.user.id, { bytes: Buffer.from(await file.arrayBuffer()), contentType: file.type || "application/octet-stream" });
-  return Response.json(publicReceipt(receipt));
+  try {
+    const form = await request.formData();
+    const file = form.get("file");
+    if (!(file instanceof File)) return Response.json({ error: { code: "validation", message: "Choose a receipt file." } }, { status: 400 });
+    if (file.size > 10 * 1024 * 1024) return Response.json({ error: { code: "payload_too_large", message: "That file is over the 10 MB limit." } }, { status: 413 });
+    const receipt = await saveReceipt(session.user.id, { bytes: Buffer.from(await file.arrayBuffer()), contentType: contentTypeForUpload(file.type, file.name) });
+    return Response.json(publicReceipt(receipt));
+  } catch (error) {
+    if (error instanceof AppError) return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status });
+    console.error(error);
+    return Response.json({ error: { code: "server", message: "The receipt didn't upload." } }, { status: 500 });
+  }
 }
 
 export async function GET() {
