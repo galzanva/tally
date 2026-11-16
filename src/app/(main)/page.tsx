@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RecentExpenses } from "@/components/recent-expenses";
 import { TrendChart } from "@/components/trend-chart";
 import { EmptyState, Eyebrow, MoneyText, Panel } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
@@ -20,7 +21,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const recent = await listExpenses(user.id, { period, from: one(params.from), to: one(params.to), limit: 8, cap: 8 });
   const upcoming = await upcomingRecurring(user.id, 7);
   const db = forUser(user.id);
-  const insight = await db.insight.findFirst({ where: { kind: "MONTHLY_REVIEW", dismissedAt: null }, orderBy: { createdAt: "desc" } });
+  const [insight, categories, methods, entities, merchants] = await Promise.all([
+    db.insight.findFirst({ where: { kind: "MONTHLY_REVIEW", dismissedAt: null }, orderBy: { createdAt: "desc" } }),
+    db.category.findMany({ where: { archivedAt: null }, orderBy: { sortOrder: "asc" } }),
+    db.paymentMethod.findMany({ orderBy: { name: "asc" } }),
+    db.entity.findMany({ orderBy: { name: "asc" } }),
+    db.merchant.findMany({ orderBy: { name: "asc" } }),
+  ]);
   const months = trailingMonths(user.timezone, 12);
   const points: { label: string; totalCents: number }[] = [];
   for (const month of months) {
@@ -96,9 +103,15 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <Panel>
         <h2 className="font-display text-2xl">Recent</h2>
         {recent.expenses.length === 0 ? <EmptyState title="No expenses in this period." body="Add one when you're ready." /> : (
-          <ul className="mt-2 divide-y divide-white/5">{recent.expenses.map((expense) => (
-            <li key={expense.id} className="flex items-center justify-between gap-3 py-3 text-sm"><span className="truncate">{expense.merchant || expense.description}</span><MoneyText cents={expense.amountCents} currency={user.currency} /></li>
-          ))}</ul>
+          <RecentExpenses
+            expenses={recent.expenses}
+            categories={categories.map((item) => ({ id: item.id, name: item.name }))}
+            methods={methods.map((item) => ({ id: item.id, name: item.name }))}
+            entities={entities.map((item) => ({ id: item.id, name: item.name, isDefault: item.isDefault }))}
+            merchants={merchants.map((item) => ({ id: item.id, name: item.name }))}
+            currency={user.currency}
+            largeAmountCents={user.largeAmountCents}
+          />
         )}
       </Panel>
     </div>
