@@ -43,6 +43,7 @@ export const RecurringCreateSchema = z.object({
   entity: z.string().optional(),
   taxTag: TaxTagSchema.optional(),
   essential: z.boolean().nullable().optional(),
+  autoPost: z.boolean().optional(),
 }).openapi("CreateRecurring");
 
 export const RateSchema = z.object({

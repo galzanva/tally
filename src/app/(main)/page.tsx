@@ -19,7 +19,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const period = one(params.period) ?? "this_month";
   const summary = await getSummary(user.id, { period, from: one(params.from), to: one(params.to) });
   const recent = await listExpenses(user.id, { period, from: one(params.from), to: one(params.to), limit: 8, cap: 8 });
-  const upcoming = await upcomingRecurring(user.id, 7);
+  const upcoming = await upcomingRecurring(user.id, 366);
   const bills = await listRecurring(user.id);
   const db = forUser(user.id);
   const [insight, categories, methods, entities, merchants] = await Promise.all([
@@ -90,7 +90,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       </Panel>
       <Panel>
         <h2 className="font-display text-2xl">Coming up</h2>
-        {upcoming.length === 0 ? <p className="mt-2 text-sm text-muted">Nothing in the next 7 days.</p> : (
+        {upcoming.length === 0 ? <p className="mt-2 text-sm text-muted">No bills are set to post automatically.</p> : (
           <ul className="mt-2 space-y-2 text-sm">{upcoming.map((item) => <li key={item.id} className="flex justify-between"><span>{item.nextRunOn} {item.name}</span><span className="tabular">{item.amountFormatted}</span></li>)}</ul>
         )}
       </Panel>
