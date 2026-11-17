@@ -73,11 +73,14 @@ export function committedTotals(items: { status: string; frequency: Frequency; a
 }
 
 async function nextOpenRun(userId: string, recurringId: string, today: string, frequency: Frequency, dayOfMonth: number, monthOfYear: number | null) {
+  const taken = await prisma.expense.findMany({
+    where: { userId, recurringId, periodKey: { not: null } },
+    select: { periodKey: true },
+  });
+  const used = new Set(taken.map((row) => row.periodKey));
   let next = firstRunOn(today, frequency, dayOfMonth, monthOfYear);
   for (let guard = 0; guard < 36; guard++) {
-    const periodKey = periodKeyFor(frequency, next);
-    const taken = await prisma.expense.findFirst({ where: { userId, recurringId, periodKey }, select: { id: true } });
-    if (!taken) return next;
+    if (!used.has(periodKeyFor(frequency, next))) return next;
     next = advanceRun(next, frequency, dayOfMonth, monthOfYear);
   }
   return next;
@@ -523,21 +526,32 @@ export async function searchExpensesToLink(userId: string, query: string) {
   }));
 }
 
+export async function recurringPostingsFor(userId: string, recurringIds: string[], currency: string) {
+  const grouped = new Map<string, { id: string; occurredOn: string; amountCents: number; amountFormatted: string; status: string; description: string }[]>();
+  for (const id of recurringIds) grouped.set(id, []);
+  if (recurringIds.length === 0) return grouped;
+  const db = forUser(userId);
+  const rows = await db.expense.findMany({
+    where: { recurringId: { in: recurringIds } },
+    orderBy: { occurredOn: "desc" },
+    select: { id: true, recurringId: true, occurredOn: true, amountCents: true, status: true, description: true },
+  });
+  for (const row of rows) {
+    if (!row.recurringId) continue;
+    grouped.get(row.recurringId)?.push({
+      id: row.id,
+      occurredOn: dateOnlyToYmd(row.occurredOn),
+      amountCents: row.amountCents,
+      amountFormatted: formatMoney(row.amountCents, currency),
+      status: row.status,
+      description: row.description,
+    });
+  }
+  return grouped;
+}
+
 export async function recurringPostings(userId: string, recurringId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return [];
-  const db = forUser(userId);
-  const rows = await db.expense.findMany({
-    where: { recurringId },
-    orderBy: { occurredOn: "desc" },
-    select: { id: true, occurredOn: true, amountCents: true, status: true, description: true },
-  });
-  return rows.map((row) => ({
-    id: row.id,
-    occurredOn: dateOnlyToYmd(row.occurredOn),
-    amountCents: row.amountCents,
-    amountFormatted: formatMoney(row.amountCents, user.currency),
-    status: row.status,
-    description: row.description,
-  }));
+  return (await recurringPostingsFor(userId, [recurringId], user.currency)).get(recurringId) ?? [];
 }

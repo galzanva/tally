@@ -18,7 +18,8 @@ import { SCOPES } from "@/lib/seed";
 
 function fail(error: unknown): { ok: false; message: string; code?: string } {
   if (error instanceof AppError) return { ok: false, message: error.message, code: error.code };
-  throw error;
+  console.error(error);
+  return { ok: false, message: "That didn't go through. Try again." };
 }
 
 export async function loginAction(_state: { message?: string } | undefined, formData: FormData) {
