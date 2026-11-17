@@ -38,6 +38,7 @@ function serializeRecurring(item: Prisma.RecurringExpenseGetPayload<{ include: t
     monthOfYear: item.monthOfYear,
     amountType: item.amountType,
     status: item.status,
+    autoPost: item.autoPost,
     startOn: dateOnlyToYmd(item.startOn),
     endOn: item.endOn ? dateOnlyToYmd(item.endOn) : null,
     nextRunOn: dateOnlyToYmd(item.nextRunOn),
@@ -71,6 +72,17 @@ export function committedTotals(items: { status: string; frequency: Frequency; a
   return { monthlyCents, yearlyCents };
 }
 
+async function nextOpenRun(userId: string, recurringId: string, today: string, frequency: Frequency, dayOfMonth: number, monthOfYear: number | null) {
+  let next = firstRunOn(today, frequency, dayOfMonth, monthOfYear);
+  for (let guard = 0; guard < 36; guard++) {
+    const periodKey = periodKeyFor(frequency, next);
+    const taken = await prisma.expense.findFirst({ where: { userId, recurringId, periodKey }, select: { id: true } });
+    if (!taken) return next;
+    next = advanceRun(next, frequency, dayOfMonth, monthOfYear);
+  }
+  return next;
+}
+
 export async function createRecurring(userId: string, actor: Actor, input: {
   name: string;
   amount: number | string;
@@ -85,6 +97,7 @@ export async function createRecurring(userId: string, actor: Actor, input: {
   entity?: string;
   taxTag?: TaxTag;
   essential?: boolean | null;
+  autoPost?: boolean;
 }) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new AppError(404, "not_found", "That account doesn't exist.");
@@ -114,8 +127,10 @@ export async function createRecurring(userId: string, actor: Actor, input: {
     const existing = merchants.find((item) => item.aliases.includes(normalized) || item.name.toLowerCase() === name.toLowerCase());
     merchantId = existing?.id ?? (await db.merchant.create({ data: { name, aliases: [normalized] } })).id;
   }
-  const startOn = input.startOn ?? todayYmd(user.timezone);
-  const nextRunOn = firstRunOn(startOn, input.frequency, input.dayOfMonth, input.monthOfYear);
+  const today = todayYmd(user.timezone);
+  const startOn = input.startOn ?? today;
+  let nextRunOn = firstRunOn(startOn, input.frequency, input.dayOfMonth, input.monthOfYear);
+  while (nextRunOn < today) nextRunOn = advanceRun(nextRunOn, input.frequency, input.dayOfMonth, input.monthOfYear);
   const created = await db.recurringExpense.create({
     data: {
       name: input.name.trim(),
@@ -129,6 +144,7 @@ export async function createRecurring(userId: string, actor: Actor, input: {
       dayOfMonth: input.dayOfMonth,
       monthOfYear: input.frequency === "YEARLY" ? input.monthOfYear ?? null : null,
       amountType: input.amountType,
+      autoPost: input.autoPost ?? false,
       startOn: ymdToDate(startOn),
       nextRunOn: ymdToDate(nextRunOn),
       rates: { create: { amountCents, effectiveFrom: ymdToDate(startOn) } },
@@ -150,6 +166,7 @@ export async function updateRecurring(userId: string, actor: Actor, id: string, 
   monthOfYear?: number | null;
   amountType?: AmountType;
   frequency?: Frequency;
+  autoPost?: boolean;
 }) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new AppError(404, "not_found", "That account doesn't exist.");
@@ -162,6 +179,7 @@ export async function updateRecurring(userId: string, actor: Actor, id: string, 
   if (input.essential !== undefined) data.essential = input.essential;
   if (input.amountType) data.amountType = input.amountType;
   if (input.frequency) data.frequency = input.frequency;
+  if (input.autoPost !== undefined) data.autoPost = input.autoPost;
   if (input.dayOfMonth) {
     assertDayOfMonth(input.dayOfMonth);
     data.dayOfMonth = input.dayOfMonth;
@@ -187,6 +205,18 @@ export async function updateRecurring(userId: string, actor: Actor, id: string, 
       if (!method) throw new AppError(400, "validation", "That payment method isn't on the account.");
       data.paymentMethod = { connect: { id: method.id } };
     }
+  }
+  const scheduleTouched = input.dayOfMonth != null || input.frequency != null || input.monthOfYear !== undefined || input.autoPost !== undefined;
+  if (scheduleTouched) {
+    const frequency = input.frequency ?? existing.frequency;
+    const day = input.dayOfMonth ?? existing.dayOfMonth;
+    const month = input.monthOfYear !== undefined ? input.monthOfYear : existing.monthOfYear;
+    if (frequency === "YEARLY" && (month == null || month < 1 || month > 12)) {
+      throw new AppError(400, "validation", "A yearly bill needs a month from 1 to 12.");
+    }
+    assertDayOfMonth(day);
+    const next = await nextOpenRun(user.id, existing.id, todayYmd(user.timezone), frequency, day, month);
+    data.nextRunOn = ymdToDate(next);
   }
   const updated = await db.recurringExpense.update({ where: { id }, data, include });
   await writeAudit(userId, { actor, action: "recurring.update", targetType: "recurring", targetId: id, diff: { fields: Object.keys(input) } });
@@ -228,7 +258,7 @@ export async function resumeRecurring(userId: string, actor: Actor, id: string, 
   const item = await db.recurringExpense.findFirst({ where: { id }, include: { rates: true } });
   if (!item) throw new AppError(404, "not_found", "That recurring item doesn't exist.");
   const today = todayYmd(user.timezone);
-  const next = backfill ? dateOnlyToYmd(item.nextRunOn) : firstRunOn(today, item.frequency, item.dayOfMonth, item.monthOfYear);
+  const next = backfill ? dateOnlyToYmd(item.nextRunOn) : await nextOpenRun(user.id, id, today, item.frequency, item.dayOfMonth, item.monthOfYear);
   await db.recurringExpense.update({ where: { id }, data: { status: "ACTIVE", nextRunOn: ymdToDate(next) } });
   await writeAudit(userId, { actor, action: "recurring.resume", targetType: "recurring", targetId: id, diff: { backfill, nextRunOn: next } });
   if (backfill) await runDueRecurring(userId, actor);
@@ -259,7 +289,7 @@ export async function runDueRecurring(userId: string, actor: Actor = "CRON") {
   const today = todayYmd(user.timezone);
   const db = forUser(userId);
   const items = await db.recurringExpense.findMany({
-    where: { status: "ACTIVE", nextRunOn: { lte: ymdToDate(today) } },
+    where: { status: "ACTIVE", autoPost: true, nextRunOn: { lte: ymdToDate(today) } },
     include: { rates: true },
   });
   let posted = 0;
@@ -313,11 +343,59 @@ export async function upcomingRecurring(userId: string, days: number) {
   until.setUTCDate(until.getUTCDate() + days);
   const db = forUser(userId);
   const items = await db.recurringExpense.findMany({
-    where: { status: "ACTIVE", nextRunOn: { gte: ymdToDate(today), lte: until } },
+    where: { status: "ACTIVE", autoPost: true, nextRunOn: { gte: ymdToDate(today), lte: until } },
     include,
     orderBy: { nextRunOn: "asc" },
   });
   return items.map((item) => serializeRecurring(item, user.currency, today));
+}
+
+export async function postMissedMonths(userId: string, actor: Actor, id: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new AppError(404, "not_found", "That account doesn't exist.");
+  const db = forUser(userId);
+  const item = await db.recurringExpense.findFirst({ where: { id }, include: { rates: true } });
+  if (!item) throw new AppError(404, "not_found", "That recurring item doesn't exist.");
+  const today = todayYmd(user.timezone);
+  const rates = item.rates.map((rate) => ({ amountCents: rate.amountCents, effectiveFrom: dateOnlyToYmd(rate.effectiveFrom) }));
+  let cursor = firstRunOn(dateOnlyToYmd(item.startOn), item.frequency, item.dayOfMonth, item.monthOfYear);
+  let posted = 0;
+  for (let guard = 0; guard < 36 && cursor < today; guard++) {
+    const periodKey = periodKeyFor(item.frequency, cursor);
+    const taken = await prisma.expense.findFirst({ where: { userId, recurringId: item.id, periodKey }, select: { id: true } });
+    const rate = rateForDate(rates, cursor);
+    if (!taken && rate) {
+      try {
+        const expense = await db.expense.create({
+          data: {
+            occurredOn: ymdToDate(cursor),
+            amountCents: rate.amountCents,
+            currency: user.currency,
+            description: item.name,
+            merchantId: item.merchantId,
+            categoryId: item.categoryId,
+            paymentMethodId: item.paymentMethodId,
+            entityId: item.entityId,
+            taxTag: item.taxTag,
+            essential: item.essential,
+            source: "RECURRING",
+            status: item.amountType === "VARIABLE" ? "PENDING_CONFIRM" : "POSTED",
+            recurringId: item.id,
+            periodKey,
+          },
+        });
+        await writeAudit(userId, { actor, action: "expense.create", targetType: "expense", targetId: expense.id, diff: { recurringId: item.id, periodKey, amountCents: rate.amountCents, missed: true } });
+        posted += 1;
+      } catch (error) {
+        if (!isUniqueConflict(error)) throw error;
+      }
+    }
+    cursor = advanceRun(cursor, item.frequency, item.dayOfMonth, item.monthOfYear);
+  }
+  const next = await nextOpenRun(user.id, item.id, today, item.frequency, item.dayOfMonth, item.monthOfYear);
+  await db.recurringExpense.update({ where: { id: item.id }, data: { nextRunOn: ymdToDate(next) } });
+  await writeAudit(userId, { actor, action: "recurring.update", targetType: "recurring", targetId: item.id, diff: { missed: posted, nextRunOn: next } });
+  return { posted, nextRunOn: next };
 }
 
 export async function postMissedCharge(userId: string, actor: Actor, recurringId: string, input: { date: string; amount: number | string }) {
@@ -399,6 +477,7 @@ export async function createRecurringFromExpense(userId: string, actor: Actor, e
     frequency: "MONTHLY",
     dayOfMonth: day,
     amountType: "FIXED",
+    autoPost: true,
     startOn: occurredOn,
     category: expense.category.name,
     merchant: expense.merchant?.name,

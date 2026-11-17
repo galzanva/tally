@@ -9,7 +9,7 @@ import { askQuestion, generateMonthlyReview } from "@/lib/ai";
 import { bulkPatchExpenses, createExpense, restoreExpense, softDeleteExpense, updateExpense, type ExpenseWrite } from "@/lib/expenses";
 import { importWorkbook } from "@/lib/import/xlsx";
 import { createManualKey, createPairingCode, deleteRevokedKey, revokeKey } from "@/lib/keys";
-import { addRate, createRecurring, createRecurringFromExpense, deleteRecurring, endRecurring, linkExpenseToRecurring, pauseRecurring, postMissedCharge, resumeRecurring, searchExpensesToLink, unlinkExpenseFromRecurring, updateRecurring } from "@/lib/recurring";
+import { addRate, createRecurring, createRecurringFromExpense, deleteRecurring, endRecurring, linkExpenseToRecurring, pauseRecurring, postMissedCharge, postMissedMonths, resumeRecurring, searchExpensesToLink, unlinkExpenseFromRecurring, updateRecurring } from "@/lib/recurring";
 import { runTaxReview } from "@/lib/tax";
 import { forUser, isUniqueConflict } from "@/lib/db";
 import { parseDollarsToCents } from "@/lib/money";
@@ -86,7 +86,21 @@ export async function saveRecurringAction(input: Parameters<typeof createRecurri
     if (input.id) await updateRecurring(user.id, "WEB", input.id, input);
     else await createRecurring(user.id, "WEB", input);
     revalidatePath("/recurring");
+    revalidatePath("/");
     return { ok: true as const };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function postMissedMonthsAction(id: string) {
+  const { user } = await requireUser();
+  try {
+    const result = await postMissedMonths(user.id, "WEB", id);
+    revalidatePath("/recurring");
+    revalidatePath("/expenses");
+    revalidatePath("/");
+    return { ok: true as const, posted: result.posted, nextRunOn: result.nextRunOn };
   } catch (error) {
     return fail(error);
   }

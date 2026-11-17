@@ -175,6 +175,7 @@ model RecurringExpense {
   monthOfYear     Int?
   amountType      AmountType
   status          RecurringStatus @default(ACTIVE)
+  autoPost        Boolean         @default(false)
   startOn         DateTime        @db.Date
   endOn           DateTime?       @db.Date
   nextRunOn       DateTime        @db.Date

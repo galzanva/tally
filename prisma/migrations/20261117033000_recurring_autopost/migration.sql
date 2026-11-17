@@ -1,0 +1,1 @@
+ALTER TABLE "RecurringExpense" ADD COLUMN "autoPost" BOOLEAN NOT NULL DEFAULT false;

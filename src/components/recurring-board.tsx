@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
-import { changeRateAction, deleteRecurringAction, linkExpenseToRecurringAction, postMissedChargeAction, recurringStatusAction, saveRecurringAction, searchExpensesToLinkAction } from "@/app/actions";
+import { CalendarClock, Search } from "lucide-react";
+import { changeRateAction, deleteRecurringAction, linkExpenseToRecurringAction, postMissedChargeAction, postMissedMonthsAction, recurringStatusAction, saveRecurringAction, searchExpensesToLinkAction } from "@/app/actions";
 import { Button, Chip, Dialog, EmptyState, Input, MoneyText, Panel, Select, Sheet } from "@/components/ui";
 
 type Rate = { id: string; amountCents: number; amountFormatted: string; effectiveFrom: string };
@@ -18,6 +18,7 @@ type Item = {
   nextRunOn: string;
   amountType: string;
   status: string;
+  autoPost: boolean;
   frequency: string;
   dayOfMonth: number;
   monthOfYear: number | null;
@@ -82,6 +83,7 @@ export function RecurringBoard({ items, currency, monthlyCents, yearlyCents, cat
   const [frequency, setFrequency] = useState("");
   const [amountType, setAmountType] = useState("");
   const [sort, setSort] = useState<SortKey>("name");
+  const [automaticOnly, setAutomaticOnly] = useState(false);
   const [page, setPage] = useState(1);
   const statusRows = items.filter((item) => item.status === tab);
   const categoryOptions = [...new Set(statusRows.map((item) => item.category))].sort((a, b) => a.localeCompare(b));
@@ -89,6 +91,7 @@ export function RecurringBoard({ items, currency, monthlyCents, yearlyCents, cat
     const needle = search.trim().toLowerCase();
     const rows = items.filter((item) => {
       if (item.status !== tab) return false;
+      if (automaticOnly && !item.autoPost) return false;
       if (category && item.category !== category) return false;
       if (frequency && item.frequency !== frequency) return false;
       if (amountType && item.amountType !== amountType) return false;
@@ -103,7 +106,7 @@ export function RecurringBoard({ items, currency, monthlyCents, yearlyCents, cat
       if (sort === "started") return b.startOn.localeCompare(a.startOn) || a.name.localeCompare(b.name);
       return a.name.localeCompare(b.name);
     });
-  }, [items, tab, search, category, frequency, amountType, sort]);
+  }, [items, tab, automaticOnly, search, category, frequency, amountType, sort]);
   const pages = Math.max(1, Math.ceil(filtered.length / LIST_PAGE));
   const current = Math.min(page, pages);
   const startIndex = (current - 1) * LIST_PAGE;
@@ -119,6 +122,7 @@ export function RecurringBoard({ items, currency, monthlyCents, yearlyCents, cat
       </Panel>
       <div className="flex flex-wrap gap-2">
         {(["ACTIVE", "PAUSED", "ENDED"] as const).map((value) => <Chip key={value} active={tab === value} onClick={() => { setTab(value); setCategory(""); resetPage(); }}>{value === "ACTIVE" ? "Active" : value === "PAUSED" ? "Paused" : "Ended"}</Chip>)}
+        <Chip active={automaticOnly} onClick={() => { setAutomaticOnly((value) => !value); resetPage(); }}>Posts automatically</Chip>
         <Button onClick={() => setOpen("new")}>Add recurring</Button>
       </div>
       <div className="relative">
@@ -151,7 +155,7 @@ export function RecurringBoard({ items, currency, monthlyCents, yearlyCents, cat
         </Select>
       </div>
       {statusRows.length === 0 ? <EmptyState title="Nothing recurring yet." body="Netflix, rent, and the electric bill can post themselves." action={<Button onClick={() => setOpen("new")}>Add recurring</Button>} /> : filtered.length === 0 ? (
-        <EmptyState title="No bills match." body="Try another category, or clear the search." action={<Button variant="secondary" onClick={() => { setSearch(""); setCategory(""); setFrequency(""); setAmountType(""); resetPage(); }}>Clear</Button>} />
+        <EmptyState title="No bills match." body="Try another category, or clear the search." action={<Button variant="secondary" onClick={() => { setSearch(""); setCategory(""); setFrequency(""); setAmountType(""); setAutomaticOnly(false); resetPage(); }}>Clear</Button>} />
       ) : (
         <>
           <BillPager page={current} pages={pages} start={startIndex + 1} end={startIndex + visible.length} total={filtered.length} onPage={setPage} />
@@ -160,8 +164,11 @@ export function RecurringBoard({ items, currency, monthlyCents, yearlyCents, cat
               <li key={item.id}>
                 <button className="flex min-h-14 w-full items-center gap-3 py-3 text-left" onClick={() => setOpen(item)}>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{item.name}</span>
-                    <span className="block truncate text-sm text-muted">{item.category} · {item.status === "ENDED" ? `Last ${prettyMonth(item.rates.at(-1)?.effectiveFrom ?? item.startOn)}` : `Since ${prettyMonth(item.startOn)}`} · {frequencyLabel(item.frequency)}{item.amountType === "VARIABLE" ? " · Variable" : ""}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="truncate font-medium">{item.name}</span>
+                      {item.autoPost ? <CalendarClock className="size-4 shrink-0 text-accent" aria-label="Posts automatically" /> : null}
+                    </span>
+                    <span className="block truncate text-sm text-muted">{item.category} · {item.status === "ENDED" ? `Last ${prettyMonth(item.rates.at(-1)?.effectiveFrom ?? item.startOn)}` : `Since ${prettyMonth(item.startOn)}`} · {frequencyLabel(item.frequency)}{item.amountType === "VARIABLE" ? " · Variable" : ""}{item.autoPost ? ` · Next ${prettyDate(item.nextRunOn)}` : ""}</span>
                   </span>
                   <MoneyText cents={item.amountCents} currency={currency} />
                 </button>
@@ -224,7 +231,6 @@ function dollars(cents: number) {
 
 function RecurringSheet({ item, categories, onClose }: { item: Item | "new" | null; categories: string[]; onClose: () => void }) {
   const router = useRouter();
-  const [backfill, setBackfill] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [view, setView] = useState<"details" | "history" | "charges">("details");
   const [historyPage, setHistoryPage] = useState(1);
@@ -267,6 +273,7 @@ function RecurringSheet({ item, categories, onClose }: { item: Item | "new" | nu
               amountType: String(data.get("amountType") ?? "FIXED") as "FIXED" | "VARIABLE",
               startOn: String(data.get("startOn") ?? ""),
               category: String(data.get("category") ?? categories[0] ?? "Other"),
+              autoPost: data.get("autoPost") === "on",
             });
             if (!result.ok) setMessage(result.message);
             else { onClose(); router.refresh(); }
@@ -296,6 +303,11 @@ function RecurringSheet({ item, categories, onClose }: { item: Item | "new" | nu
             <Field label="Category" hint="Where this spending is filed.">
               <Select name="category" defaultValue={existing?.category}>{categories.map((name) => <option key={name}>{name}</option>)}</Select>
             </Field>
+            <label className="flex min-h-11 items-center gap-2 text-sm" title="The cron job posts this bill on its day. A new price applies from the date that price starts.">
+              <input type="checkbox" name="autoPost" defaultChecked={existing ? existing.autoPost : true} />
+              Post automatically
+            </label>
+            <p className="text-xs text-muted">Monthly uses the day above. Yearly uses that day and month. Saving puts the next one on the upcoming list.</p>
           </form>
           {existing ? (
             <div className="mt-4 space-y-3">
@@ -314,10 +326,18 @@ function RecurringSheet({ item, categories, onClose }: { item: Item | "new" | nu
                 <label className="flex min-h-11 items-center gap-2 text-sm" title="Updates charges already posted on or after that date."><input type="checkbox" name="applyToPosted" /> Reprice postings on or after that date</label>
                 <Button type="submit" variant="secondary">Change price from…</Button>
               </form>
-              <label className="flex min-h-11 items-center gap-2 text-sm" title="When you resume, also post any months that were skipped."><input type="checkbox" checked={backfill} onChange={(event) => setBackfill(event.target.checked)} /> Post missed months</label>
+              {message ? <p className="text-sm text-muted">{message}</p> : null}
               <div className="flex flex-wrap gap-2">
                 <Button variant="warn" onClick={() => recurringStatusAction(existing.id, "pause").then(() => router.refresh())}>Pause</Button>
-                <Button variant="secondary" onClick={() => recurringStatusAction(existing.id, "resume", backfill).then(() => router.refresh())}>Resume</Button>
+                <Button variant="secondary" onClick={() => recurringStatusAction(existing.id, "resume").then(() => router.refresh())}>Resume</Button>
+                <Button variant="secondary" onClick={async () => {
+                  const result = await postMissedMonthsAction(existing.id);
+                  if (!result.ok) setMessage(result.message);
+                  else {
+                    setMessage(result.posted ? `Added ${result.posted} missed ${result.posted === 1 ? "charge" : "charges"}. Next one is ${result.nextRunOn}.` : `No missed months. Next one is ${result.nextRunOn}.`);
+                    router.refresh();
+                  }
+                }}>Post missed months</Button>
                 <Button variant="secondary" onClick={() => recurringStatusAction(existing.id, "end").then(() => router.refresh())}>End</Button>
                 <Button variant="danger" onClick={() => setConfirmDelete(true)}>Delete</Button>
               </div>
