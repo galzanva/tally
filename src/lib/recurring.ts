@@ -1,10 +1,10 @@
 import type { Actor, AmountType, Frequency, Prisma, TaxTag } from "@prisma/client";
 import { writeAudit } from "@/lib/audit";
-import { dateOnlyToYmd, todayYmd, ymdToDate } from "@/lib/dates";
+import { dateOnlyToYmd, daysInMonth, padYmd, todayYmd, ymdToDate } from "@/lib/dates";
 import { forUser, isUniqueConflict, prisma } from "@/lib/db";
 import { AppError } from "@/lib/errors";
 import { formatMoney, parseDollarsToCents } from "@/lib/money";
-import { advanceRun, assertDayOfMonth, dateOnlyRate, firstRunOn, periodKeyFor, rateForDate } from "@/lib/recurring/schedule";
+import { advanceRun, assertDayOfMonth, dateOnlyRate, firstRunOn, periodKeyFor, rateForDate, scheduledYmd } from "@/lib/recurring/schedule";
 import { canonicalMerchantName, normalizeMerchant } from "@/lib/text";
 
 const include = { rates: { orderBy: { effectiveFrom: "asc" as const } }, merchant: true, category: true, paymentMethod: true, entity: true };
@@ -70,6 +70,62 @@ export function committedTotals(items: { status: string; frequency: Frequency; a
     }
   }
   return { monthlyCents, yearlyCents };
+}
+
+type MonthBill = {
+  status: string;
+  autoPost: boolean;
+  frequency: Frequency;
+  dayOfMonth: number;
+  monthOfYear: number | null;
+  startOn: string;
+  endOn: string | null;
+  amountCents: number;
+  rates: { amountCents: number; effectiveFrom: string }[];
+};
+
+function chargeInMonth(item: MonthBill, monthStart: string, monthEnd: string) {
+  const [year, month] = monthStart.split("-").map(Number);
+  if (item.frequency === "MONTHLY") {
+    const date = scheduledYmd(year!, month!, item.dayOfMonth);
+    if (date < item.startOn || (item.endOn && date > item.endOn)) return null;
+    return date;
+  }
+  let cursor = firstRunOn(item.startOn, item.frequency, item.dayOfMonth, item.monthOfYear);
+  for (let guard = 0; guard < 240 && cursor <= monthEnd; guard++) {
+    if (cursor >= monthStart && (!item.endOn || cursor <= item.endOn)) return cursor;
+    cursor = advanceRun(cursor, item.frequency, item.dayOfMonth, item.monthOfYear);
+  }
+  return null;
+}
+
+export type MonthSlice = { monthCents: number; leftCents: number; leftCount: number };
+
+function emptySlice(): MonthSlice {
+  return { monthCents: 0, leftCents: 0, leftCount: 0 };
+}
+
+export function monthStillAhead(items: MonthBill[], today: string) {
+  const [year, month] = today.split("-").map(Number);
+  const monthStart = padYmd(year!, month!, 1);
+  const monthEnd = padYmd(year!, month!, daysInMonth(year!, month!));
+  const confirmed = emptySlice();
+  const estimated = emptySlice();
+  for (const item of items) {
+    if (item.status !== "ACTIVE") continue;
+    const date = chargeInMonth(item, monthStart, monthEnd);
+    if (!date) continue;
+    const cents = rateForDate(item.rates, date)?.amountCents ?? item.amountCents;
+    const slice = item.autoPost ? confirmed : estimated;
+    slice.monthCents += cents;
+    if (date >= today) {
+      slice.leftCents += cents;
+      slice.leftCount += 1;
+    }
+  }
+  const leftCents = confirmed.leftCents + estimated.leftCents;
+  const monthCents = confirmed.monthCents + estimated.monthCents;
+  return { confirmed, estimated, leftCents, monthCents, pastCents: monthCents - leftCents };
 }
 
 async function nextOpenRun(userId: string, recurringId: string, today: string, frequency: Frequency, dayOfMonth: number, monthOfYear: number | null) {

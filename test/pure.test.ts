@@ -3,6 +3,7 @@ import test from "node:test";
 import { formatMoney, parseDollarsToCents } from "../src/lib/money";
 import { luhnValid, maskCardNumbers, matchCategoryName, normalizeMerchant } from "../src/lib/text";
 import { planRecurring, type RecurringCharge } from "../src/lib/recurring/plan";
+import { monthStillAhead } from "../src/lib/recurring";
 import { advanceRun, firstRunOn, rateForDate, scheduledYmd } from "../src/lib/recurring/schedule";
 import { resolvePeriod } from "../src/lib/dates";
 
@@ -39,6 +40,36 @@ test("recurring rates and day clamping", () => {
   assert.equal(firstRunOn("2026-08-10", "MONTHLY", 5, null), "2026-09-05");
   assert.equal(advanceRun("2026-01-31", "MONTHLY", 31, null), "2026-02-28");
   assert.equal(advanceRun("2026-02-28", "MONTHLY", 31, null), "2026-03-31");
+});
+
+test("this month's bar counts automatic bills still ahead", () => {
+  const bill = (day: number, autoPost: boolean, frequency: "MONTHLY" | "YEARLY" = "MONTHLY", monthOfYear: number | null = null) => ({
+    status: "ACTIVE",
+    autoPost,
+    frequency,
+    dayOfMonth: day,
+    monthOfYear,
+    startOn: "2026-01-01",
+    endOn: null,
+    amountCents: 1000,
+    rates: [{ amountCents: 1000, effectiveFrom: "2026-01-01" }],
+  });
+  const variable = {
+    ...bill(21, false),
+    amountCents: 5000,
+    rates: [
+      { amountCents: 5000, effectiveFrom: "2026-01-09" },
+      { amountCents: 6819, effectiveFrom: "2026-10-09" },
+    ],
+  };
+  const result = monthStillAhead([bill(6, true), bill(20, true), bill(25, false), bill(20, true, "YEARLY", 2), variable], "2026-11-17");
+  assert.equal(result.confirmed.monthCents, 2000);
+  assert.equal(result.confirmed.leftCents, 1000);
+  assert.equal(result.confirmed.leftCount, 1);
+  assert.equal(result.estimated.leftCents, 1000 + 6819);
+  assert.equal(result.estimated.leftCount, 2);
+  assert.equal(result.leftCents, 1000 + 1000 + 6819);
+  assert.equal(result.pastCents, result.monthCents - result.leftCents);
 });
 
 test("recurring plans follow recent charges", () => {
