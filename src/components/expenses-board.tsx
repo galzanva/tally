@@ -33,6 +33,7 @@ export function ExpensesBoard(props: {
   page: number;
   pageSize: number;
   total: number;
+  today: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(props.query.new === "1");
@@ -123,7 +124,7 @@ export function ExpensesBoard(props: {
         <a className="inline-flex min-h-11 items-center text-sm text-accent" href={`/api/export/expenses?${new URLSearchParams(Object.entries(props.query).filter((entry): entry is [string, string] => Boolean(entry[1] && entry[0] !== "new" && entry[0] !== "page")))}`}>Export CSV</a>
         <ExpensePager page={props.page} pageSize={props.pageSize} total={props.total} hrefFor={(page) => pageHref(props.query, page)} />
       </div>
-      <ExpenseSheet open={open} expense={editing} onOpenChange={setOpen} categories={props.categories} methods={props.methods} entities={props.entities} merchants={props.merchants} bills={props.bills} currency={props.currency} largeAmountCents={props.largeAmountCents} />
+      <ExpenseSheet open={open} expense={editing} onOpenChange={setOpen} categories={props.categories} methods={props.methods} entities={props.entities} merchants={props.merchants} bills={props.bills} currency={props.currency} largeAmountCents={props.largeAmountCents} today={props.today} />
       <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} query={props.query} push={push} categories={props.categories} methods={props.methods} entities={props.entities} />
     </div>
   );
@@ -178,6 +179,7 @@ export function ExpenseSheet(props: {
   bills: RecurringOption[];
   currency: string;
   largeAmountCents: number;
+  today: string;
 }) {
   const router = useRouter();
   const [toast, setToast] = useState<{ id: string; label: string } | null>(null);
@@ -195,7 +197,7 @@ export function ExpenseSheet(props: {
 
   return (
     <>
-      <ExpenseEditor key={props.expense?.id ?? "new"} open={props.open} expense={props.expense} onOpenChange={props.onOpenChange} categories={props.categories} methods={props.methods} entities={props.entities} merchants={props.merchants} bills={props.bills} currency={props.currency} largeAmountCents={props.largeAmountCents} onDelete={setConfirm} />
+      <ExpenseEditor key={props.expense?.id ?? "new"} open={props.open} expense={props.expense} onOpenChange={props.onOpenChange} categories={props.categories} methods={props.methods} entities={props.entities} merchants={props.merchants} bills={props.bills} currency={props.currency} largeAmountCents={props.largeAmountCents} today={props.today} onDelete={setConfirm} />
       <Dialog open={Boolean(confirm)} onOpenChange={() => setConfirm(null)} title="Delete this expense?" description={confirm ? `${confirm.merchant || confirm.description} · ${confirm.amountFormatted}` : ""}>
         <div className="flex gap-2">
           <Button variant="secondary" onClick={() => setConfirm(null)}>Keep it</Button>
@@ -223,6 +225,7 @@ function ExpenseEditor(props: {
   bills: RecurringOption[];
   currency: string;
   largeAmountCents: number;
+  today: string;
   onDelete: (expense: ExpenseDTO) => void;
 }) {
   const router = useRouter();
@@ -321,7 +324,7 @@ function ExpenseEditor(props: {
         <label className="block"><span className="text-sm text-muted">Amount</span>
           <Input name="amount" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="font-display text-4xl tabular" required />
         </label>
-        <label className="block"><span className="text-sm text-muted">Date</span><Input name="date" type="date" defaultValue={expense?.occurredOn} /></label>
+        <label className="block"><span className="text-sm text-muted">Date</span><Input name="date" type="date" defaultValue={expense?.occurredOn ?? props.today} /></label>
         <label className="block"><span className="text-sm text-muted">Merchant</span>
           <Input name="merchant" list="merchants" defaultValue={expense?.merchant ?? ""} />
           <datalist id="merchants">{props.merchants.map((merchant) => <option key={merchant.id} value={merchant.name} />)}</datalist>

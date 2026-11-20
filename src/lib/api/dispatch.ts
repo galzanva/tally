@@ -1,4 +1,5 @@
 import { ZodError } from "zod";
+import { todayYmd } from "@/lib/dates";
 import { askQuestion } from "@/lib/ai";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/db";
@@ -84,7 +85,7 @@ async function handle(method: string, request: Request, parts: string[]) {
   const userId = key.userId;
 
   if (method === "GET" && a === "me") {
-    return ok({ email: key.user.email, timezone: key.user.timezone, currency: key.user.currency, scopes: key.scopes });
+    return ok({ email: key.user.email, timezone: key.user.timezone, today: todayYmd(key.user.timezone), currency: key.user.currency, scopes: key.scopes });
   }
   if (method === "GET" && a === "categories") {
     const rows = await forUser(userId).category.findMany({ where: { archivedAt: null }, orderBy: { sortOrder: "asc" } });

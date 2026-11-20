@@ -1,5 +1,6 @@
 import { ExpensesBoard } from "@/components/expenses-board";
 import { requireUser } from "@/lib/auth";
+import { todayYmd } from "@/lib/dates";
 import { forUser } from "@/lib/db";
 import { listExpenses } from "@/lib/expenses";
 import { listRecurring } from "@/lib/recurring";
@@ -57,6 +58,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       page={listed.page}
       pageSize={listed.pageSize}
       total={listed.total}
+      today={todayYmd(user.timezone)}
     />
   );
 }

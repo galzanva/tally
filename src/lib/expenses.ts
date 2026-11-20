@@ -1,7 +1,7 @@
 import type { Actor, Expense, Prisma, TaxTag } from "@prisma/client";
 import { writeAudit } from "@/lib/audit";
 import { categorizeWithLlm } from "@/lib/categorize";
-import { dateOnlyToYmd, daysBetween, resolvePeriod, todayYmd, ymdToDate } from "@/lib/dates";
+import { chargeDateInZone, dateOnlyToYmd, daysBetween, resolvePeriod, todayYmd, ymdToDate } from "@/lib/dates";
 import { forUser, isUniqueConflict, prisma } from "@/lib/db";
 import { AppError } from "@/lib/errors";
 import { formatMoney, parseDollarsToCents } from "@/lib/money";
@@ -268,8 +268,12 @@ export async function createExpense(options: {
   if (Math.abs(amountCents) >= ctx.user.largeAmountCents && options.input.confirmLarge !== true) {
     throw new AppError(422, "confirm_large_amount", largeMessage(amountCents, ctx.user.largeAmountCents, ctx.user.currency));
   }
-  const occurredOn = options.input.date?.trim() || todayYmd(ctx.user.timezone);
+  const settled = options.source === "API"
+    ? chargeDateInZone(options.input.date, ctx.user.timezone)
+    : { ymd: options.input.date?.trim() || todayYmd(ctx.user.timezone), adjustedFrom: null as string | null };
+  const occurredOn = settled.ymd;
   ymdToDate(occurredOn);
+  if (settled.adjustedFrom) warnings.push(`Saved as ${occurredOn}. ${settled.adjustedFrom} is the UTC date, and it is still ${occurredOn} in your timezone.`);
   const merchant = await resolveMerchant(ctx, options.input.merchant);
   const description = (options.input.description?.trim() || merchant?.name || "").slice(0, 200);
   if (!description) throw new AppError(400, "validation", "Add a description or a merchant.");
