@@ -4,7 +4,7 @@ import { z } from "zod";
 extendZodWithOpenApi(z);
 
 export const AmountSchema = z.union([z.number(), z.string()]).openapi({ description: "Dollars, like 23.40 or \"23.40\"." });
-export const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Dates look like 2026-11-15.");
+export const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Dates look like 2026-11-15.").openapi({ description: "Calendar date in the account timezone, from GET /me today. Omit it for today. Do not send a UTC date." });
 export const TaxTagSchema = z.enum(["UNREVIEWED", "NONE", "BUSINESS", "MEDICAL", "CHARITABLE", "TAX_PAYMENT", "PROPERTY_TAX", "POSSIBLY_DEDUCTIBLE"]);
 
 export const CreateExpenseSchema = z.object({

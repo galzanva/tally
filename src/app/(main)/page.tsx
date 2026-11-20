@@ -7,32 +7,11 @@ import { todayYmd, trailingMonths } from "@/lib/dates";
 import { forUser } from "@/lib/db";
 import { listExpenses } from "@/lib/expenses";
 import { formatMoney } from "@/lib/money";
-import { listRecurring, monthStillAhead, upcomingRecurring } from "@/lib/recurring";
+import { comingCharges, listRecurring, monthStillAhead } from "@/lib/recurring";
 import { getSummary } from "@/lib/summary";
 
 function one(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function aheadHint(count: number, kind: string) {
-  if (count === 0) return "";
-  return `${count} ${count === 1 ? "bill" : "bills"} ${kind}`;
-}
-
-function AheadBar({ label, currency, leftCents, monthCents, tone, empty, hint }: { label: string; currency: string; leftCents: number; monthCents: number; tone: string; empty: string; hint: string }) {
-  const share = monthCents === 0 ? 0 : Math.round((leftCents / monthCents) * 100);
-  return (
-    <div>
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="text-sm">{label}</p>
-        <MoneyText cents={leftCents} currency={currency} className="text-sm" />
-      </div>
-      <div className="mt-2 h-3 overflow-hidden rounded-full bg-surface-strong" role="progressbar" aria-valuenow={share} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
-        <div className={`h-full rounded-full ${tone}`} style={{ width: `${share}%` }} />
-      </div>
-      <p className="mt-1 text-xs text-muted">{leftCents === 0 ? empty : hint}</p>
-    </div>
-  );
 }
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -42,9 +21,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const summary = await getSummary(user.id, { period, from: one(params.from), to: one(params.to) });
   const recent = await listExpenses(user.id, { period, from: one(params.from), to: one(params.to), limit: 8, cap: 8 });
   const today = todayYmd(user.timezone);
-  const upcoming = await upcomingRecurring(user.id, 7);
   const bills = await listRecurring(user.id);
   const monthAhead = monthStillAhead(bills, today);
+  const upcoming = comingCharges(bills, today, 7);
+  const confirmedShare = monthAhead.leftCents === 0 ? 0 : (monthAhead.confirmed.leftCents / monthAhead.leftCents) * 100;
+  const estimatedShare = monthAhead.leftCents === 0 ? 0 : (monthAhead.estimated.leftCents / monthAhead.leftCents) * 100;
   const db = forUser(user.id);
   const [categories, methods, entities, merchants] = await Promise.all([
     db.category.findMany({ where: { archivedAt: null }, orderBy: { sortOrder: "asc" } }),
@@ -112,17 +93,29 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <TrendChart points={points} currency={user.currency} />
       </Panel>
       <Panel>
-        <Eyebrow>Estimated left</Eyebrow>
-        <MoneyText cents={monthAhead.leftCents} currency={user.currency} className="mt-2 block font-display text-4xl" />
+        <Eyebrow>Still left · confirmed / estimated</Eyebrow>
+        <p className="mt-2 font-display text-4xl tabular">
+          <span>{formatMoney(monthAhead.confirmed.leftCents, user.currency)}</span>
+          <span className="text-muted"> / {formatMoney(monthAhead.estimated.leftCents, user.currency)}</span>
+        </p>
         <p className="mt-1 text-sm text-muted">{formatMoney(monthAhead.pastCents, user.currency)} already past of {formatMoney(monthAhead.monthCents, user.currency)} this month</p>
-        <div className="mt-4 space-y-4">
-          <AheadBar label="Will post" currency={user.currency} leftCents={monthAhead.confirmed.leftCents} monthCents={monthAhead.monthCents} tone="bg-accent" empty="Nothing left to post." hint={aheadHint(monthAhead.confirmed.leftCount, "confirmed")} />
-          <AheadBar label="Estimated" currency={user.currency} leftCents={monthAhead.estimated.leftCents} monthCents={monthAhead.monthCents} tone="bg-ink" empty="No other bills left this month." hint={aheadHint(monthAhead.estimated.leftCount, "from the latest amount")} />
+        <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-surface-strong" role="img" aria-label={`${formatMoney(monthAhead.confirmed.leftCents, user.currency)} confirmed and ${formatMoney(monthAhead.estimated.leftCents, user.currency)} estimated`}>
+          <div className="h-full shrink-0 bg-accent" style={{ width: `${confirmedShare}%` }} />
+          <div className="h-full shrink-0 bg-ink/35" style={{ width: `${estimatedShare}%` }} />
         </div>
+        <p className="mt-1 text-xs text-muted">Green will post · grey is estimated, potential based on last month</p>
         <h2 className="mt-6 font-display text-2xl">Coming up</h2>
-        <p className="text-xs text-muted">Confirmed to post in the next 7 days</p>
-        {upcoming.length === 0 ? <p className="mt-2 text-sm text-muted">Nothing posts in the next 7 days.</p> : (
-          <ul className="mt-2 space-y-2 text-sm">{upcoming.map((item) => <li key={item.id} className="flex justify-between gap-3"><span>{item.nextRunOn} {item.name}</span><span className="tabular">{item.amountFormatted}</span></li>)}</ul>
+        <p className="text-xs text-muted">Next 7 days</p>
+        {upcoming.length === 0 ? <p className="mt-2 text-sm text-muted">Nothing due in the next 7 days.</p> : (
+          <ul className="mt-2 space-y-2 text-sm">{upcoming.map((item) => (
+            <li key={item.id} className="flex items-baseline justify-between gap-3">
+              <span>
+                <span>{item.date} {item.name}</span>
+                {item.estimated ? <span className="mt-0.5 block text-xs text-muted">Estimated · potential based on last month</span> : <span className="mt-0.5 block text-xs text-muted">Will post</span>}
+              </span>
+              <span className={`tabular ${item.estimated ? "text-muted" : ""}`}>{formatMoney(item.amountCents, user.currency)}</span>
+            </li>
+          ))}</ul>
         )}
       </Panel>
       <Panel>
@@ -137,6 +130,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             bills={bills.map((item) => ({ id: item.id, name: item.name, amountFormatted: item.amountFormatted }))}
             currency={user.currency}
             largeAmountCents={user.largeAmountCents}
+            today={today}
           />
         )}
       </Panel>

@@ -3,9 +3,9 @@ import test from "node:test";
 import { formatMoney, parseDollarsToCents } from "../src/lib/money";
 import { luhnValid, maskCardNumbers, matchCategoryName, normalizeMerchant } from "../src/lib/text";
 import { planRecurring, type RecurringCharge } from "../src/lib/recurring/plan";
-import { monthStillAhead } from "../src/lib/recurring";
+import { comingCharges, monthStillAhead } from "../src/lib/recurring";
 import { advanceRun, firstRunOn, rateForDate, scheduledYmd } from "../src/lib/recurring/schedule";
-import { resolvePeriod } from "../src/lib/dates";
+import { chargeDateInZone, resolvePeriod } from "../src/lib/dates";
 
 test("parses dollars into cents", () => {
   assert.equal(parseDollarsToCents("23.40"), 2340);
@@ -70,6 +70,9 @@ test("this month's bar counts automatic bills still ahead", () => {
   assert.equal(result.estimated.leftCount, 2);
   assert.equal(result.leftCents, 1000 + 1000 + 6819);
   assert.equal(result.pastCents, result.monthCents - result.leftCents);
+  const named = (day: number, autoPost: boolean, id: string) => ({ ...bill(day, autoPost), id, name: id });
+  const soon = comingCharges([named(20, true, "confirmed"), named(18, false, "guess"), named(6, true, "later")], "2026-11-17", 7);
+  assert.deepEqual(soon.map((row) => [row.name, row.estimated]), [["guess", true], ["confirmed", false]]);
 });
 
 test("recurring plans follow recent charges", () => {
@@ -125,6 +128,18 @@ test("recurring plans follow recent charges", () => {
   const espn = plans.find((plan) => plan.name === "ESPN");
   assert.equal(espn?.status, "ENDED");
   assert.deepEqual(espn?.rates.map((rate) => rate.amountCents), [2999, 1199]);
+});
+
+test("a UTC date after local midnight stays on the account's today", () => {
+  const evening = new Date("2026-11-20T01:39:33.000Z");
+  const shifted = chargeDateInZone("2026-11-20", "America/New_York", evening);
+  assert.equal(shifted.ymd, "2026-11-19");
+  assert.equal(shifted.adjustedFrom, "2026-11-20");
+  const named = chargeDateInZone("2026-11-18", "America/New_York", evening);
+  assert.equal(named.ymd, "2026-11-18");
+  assert.equal(named.adjustedFrom, null);
+  const morning = chargeDateInZone(undefined, "America/New_York", new Date("2026-11-19T15:00:00.000Z"));
+  assert.equal(morning.ymd, "2026-11-19");
 });
 
 test("calendar quarters and last month", () => {

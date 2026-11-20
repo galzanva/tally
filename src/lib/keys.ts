@@ -84,7 +84,7 @@ function skillRules(base: string) {
    - Every request uses Authorization: Bearer and the apiKey from ~/.openclaw/secrets/tally.json.
    - Every POST gets an Idempotency-Key header (a new UUID per Telegram message; reuse it on retries).
    - Receipt photo: POST /api/v1/receipts first, then POST /api/v1/expenses with receiptIds.
-   - amount in dollars; date YYYY-MM-DD in my timezone; omit date for today.
+   - amount in dollars. Omit date unless I named a calendar day. Never send your own clock's date. Today is the today field from GET /api/v1/me, in my timezone.
    - Use names from GET /api/v1/categories and /payment-methods. If unsure, leave category out.
    - If the response has warnings, needsReview, or action "matched_recurring", tell me in one line.
    - If you get confirm_large_amount, ask me before resending with confirmLarge:true.

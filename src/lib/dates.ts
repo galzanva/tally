@@ -1,8 +1,17 @@
 import { TZDate, tz } from "@date-fns/tz";
 import { format } from "date-fns";
 
-export function todayYmd(timeZone: string) {
-  return format(new Date(), "yyyy-MM-dd", { in: tz(timeZone) });
+export function todayYmd(timeZone: string, now = new Date()) {
+  return format(now, "yyyy-MM-dd", { in: tz(timeZone) });
+}
+
+export function chargeDateInZone(input: string | undefined, timeZone: string, now = new Date()) {
+  const today = todayYmd(timeZone, now);
+  const given = input?.trim() ?? "";
+  if (!given) return { ymd: today, adjustedFrom: null as string | null };
+  const utcToday = todayYmd("UTC", now);
+  if (given === utcToday && given !== today) return { ymd: today, adjustedFrom: given };
+  return { ymd: given, adjustedFrom: null as string | null };
 }
 
 export function formatInZone(date: Date, pattern: string, timeZone: string) {

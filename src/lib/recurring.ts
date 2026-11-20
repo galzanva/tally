@@ -1,6 +1,6 @@
 import type { Actor, AmountType, Frequency, Prisma, TaxTag } from "@prisma/client";
 import { writeAudit } from "@/lib/audit";
-import { dateOnlyToYmd, daysInMonth, padYmd, todayYmd, ymdToDate } from "@/lib/dates";
+import { addDaysYmd, dateOnlyToYmd, daysInMonth, padYmd, todayYmd, ymdToDate } from "@/lib/dates";
 import { forUser, isUniqueConflict, prisma } from "@/lib/db";
 import { AppError } from "@/lib/errors";
 import { formatMoney, parseDollarsToCents } from "@/lib/money";
@@ -126,6 +126,35 @@ export function monthStillAhead(items: MonthBill[], today: string) {
   const leftCents = confirmed.leftCents + estimated.leftCents;
   const monthCents = confirmed.monthCents + estimated.monthCents;
   return { confirmed, estimated, leftCents, monthCents, pastCents: monthCents - leftCents };
+}
+
+function nextCharge(item: MonthBill, today: string) {
+  let cursor = firstRunOn(item.startOn, item.frequency, item.dayOfMonth, item.monthOfYear);
+  for (let guard = 0; guard < 240 && cursor < today; guard++) {
+    cursor = advanceRun(cursor, item.frequency, item.dayOfMonth, item.monthOfYear);
+  }
+  if (cursor < today || cursor < item.startOn) return null;
+  if (item.endOn && cursor > item.endOn) return null;
+  return cursor;
+}
+
+export function comingCharges(items: (MonthBill & { id: string; name: string })[], today: string, days = 7) {
+  const until = addDaysYmd(today, days);
+  const rows: { id: string; name: string; date: string; amountCents: number; estimated: boolean }[] = [];
+  for (const item of items) {
+    if (item.status !== "ACTIVE") continue;
+    const date = nextCharge(item, today);
+    if (!date || date > until) continue;
+    rows.push({
+      id: item.id,
+      name: item.name,
+      date,
+      amountCents: rateForDate(item.rates, date)?.amountCents ?? item.amountCents,
+      estimated: !item.autoPost,
+    });
+  }
+  rows.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+  return rows;
 }
 
 async function nextOpenRun(userId: string, recurringId: string, today: string, frequency: Frequency, dayOfMonth: number, monthOfYear: number | null) {
