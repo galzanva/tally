@@ -130,6 +130,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             bills={bills.map((item) => ({ id: item.id, name: item.name, amountFormatted: item.amountFormatted }))}
             currency={user.currency}
             largeAmountCents={user.largeAmountCents}
+            today={today}
           />
         )}
       </Panel>

@@ -17,6 +17,7 @@ export function RecentExpenses(props: {
   bills: RecurringOption[];
   currency: string;
   largeAmountCents: number;
+  today: string;
 }) {
   const [editing, setEditing] = useState<ExpenseDTO | null>(null);
   return (
@@ -42,6 +43,7 @@ export function RecentExpenses(props: {
         bills={props.bills}
         currency={props.currency}
         largeAmountCents={props.largeAmountCents}
+        today={props.today}
       />
     </>
   );
